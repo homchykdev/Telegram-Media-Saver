@@ -1,0 +1,6 @@
+{
+  "name": "Media Saver",
+  "description": "Download TikTok videos and image carousels and save them directly to Telegram",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

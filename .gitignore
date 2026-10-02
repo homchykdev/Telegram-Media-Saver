@@ -1,0 +1,63 @@
+########## Gradle / Android Studio ##########
+*.iml
+.gradle/
+.kotlin/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+.idea/
+!.idea/codeStyles/
+!.idea/gradle.xml
+
+########## Secrets – NEVER commit ##########
+# Telegram bot token lives in EncryptedSharedPreferences, but keep these out too
+.env
+.env.*
+!.env.example
+google-services.json
+firebase-messaging.json
+
+# Keystores / signing material
+*.jks
+*.keystore
+debug.keystore
+release.keystore
+my-upload-key.jks
+# ...but keep the default debug key so clean clones can build
+!debug.keystore.sample
+
+########## OS noise ##########
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+########## Google AI Studio leftovers ##########
+assets/.aistudio/
+
+########## Build / test output ##########
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+release/
+captures/
+roborazzi/
+app/src/test/screenshots/
+
+########## Logs & profiling ##########
+*.log
+*.hprof
+.cxx/
+
+########## OS / editor ##########
+*.swp
+*.swo
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.vscode/

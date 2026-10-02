@@ -1,0 +1,24 @@
+# Normalise line endings: check out LF on all platforms, commit LF
+* text=auto eol=lf
+
+# Windows scripts must stay CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+gradlew text eol=crlf
+
+# Binary assets - never touched
+*.apk binary
+*.aab binary
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.wav binary
+*.mp4 binary
+*.jks binary
+*.keystore binary
+
+# Gradle wrapper jar is binary but tracked
+gradle/wrapper/gradle-wrapper.jar binary
