@@ -1,4 +1,5 @@
 <div align="center">
+  <img src="app/src/main/res/drawable/app_icon_foreground_1783869621697.jpg" width="25%" /> <br>
   <h1>Media Saver</h1>
   <p>Android-приложение, которое сохраняет видео и карусели из TikTok прямо в вашу Telegram-группу — без авторизации в TikTok.</p>
 </div>
