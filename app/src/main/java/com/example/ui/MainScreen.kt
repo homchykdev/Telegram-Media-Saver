@@ -29,7 +29,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.util.Log
@@ -46,6 +45,7 @@ fun MainScreen(
     viewModel: MainViewModel,
     onOpenSettings: () -> Unit
 ) {
+    val s = strings
     var urlInput by remember { mutableStateOf("") }
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
@@ -53,9 +53,7 @@ fun MainScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Show the outcome before clearing it. Previously every error was reset to Idle
-    // in the same frame it arrived and nothing ever rendered it, so a failed upload
-    // produced no message on screen at all.
+    // Show the outcome before clearing it.
     LaunchedEffect(uiState) {
         when (val state = uiState) {
             is MainViewModel.UiState.Success -> {
@@ -72,7 +70,7 @@ fun MainScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFFF7F8FA), // Modern, soft off-white/light-gray background
+        containerColor = Color(0xFFF7F8FA),
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Column(
@@ -91,11 +89,11 @@ fun MainScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Media Downloader",
+                    text = s.mainTitle,
                     style = TextStyle(
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A), // Slate 900
+                        color = Color(0xFF0F172A),
                         letterSpacing = (-0.5).sp
                     )
                 )
@@ -116,8 +114,8 @@ fun MainScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
-                            contentDescription = "Настройки",
-                            tint = Color(0xFF334155), // Slate 700
+                            contentDescription = s.settings,
+                            tint = Color(0xFF334155),
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -142,8 +140,8 @@ fun MainScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Link,
-                        contentDescription = "Ссылка",
-                        tint = Color(0xFF94A3B8), // Slate 400
+                        contentDescription = s.linkIconDesc,
+                        tint = Color(0xFF94A3B8),
                         modifier = Modifier.size(24.dp)
                     )
 
@@ -153,10 +151,10 @@ fun MainScreen(
                     ) {
                         if (urlInput.isEmpty()) {
                             Text(
-                                text = "Вставьте ссылку на TikTok",
+                                text = s.urlPlaceholder,
                                 style = TextStyle(
                                     fontSize = 15.sp,
-                                    color = Color(0xFF94A3B8), // Slate 400
+                                    color = Color(0xFF94A3B8)
                                 )
                             )
                         }
@@ -165,7 +163,7 @@ fun MainScreen(
                             onValueChange = { urlInput = it },
                             textStyle = TextStyle(
                                 fontSize = 15.sp,
-                                color = Color(0xFF1E293B), // Slate 800
+                                color = Color(0xFF1E293B)
                             ),
                             singleLine = true,
                             modifier = Modifier
@@ -174,7 +172,7 @@ fun MainScreen(
                         )
                     }
 
-                    // Paste Button (Small slate-light rounded box)
+                    // Paste Button
                     Card(
                         modifier = Modifier
                             .size(38.dp)
@@ -195,8 +193,8 @@ fun MainScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ContentPaste,
-                                contentDescription = "Вставить",
-                                tint = Color(0xFF475569), // Slate 600
+                                contentDescription = s.pasteIconDesc,
+                                tint = Color(0xFF475569),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -214,9 +212,9 @@ fun MainScreen(
                 enabled = uiState !is MainViewModel.UiState.Processing && urlInput.isNotEmpty(),
                 shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFEDEFF3), // Soft light gray-bluish
+                    containerColor = Color(0xFFEDEFF3),
                     disabledContainerColor = Color(0xFFEDEFF3).copy(alpha = 0.5f),
-                    contentColor = Color(0xFF475569), // Dark gray-bluish text
+                    contentColor = Color(0xFF475569),
                     disabledContentColor = Color(0xFF475569).copy(alpha = 0.5f)
                 ),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
@@ -227,11 +225,11 @@ fun MainScreen(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Отправить",
+                        contentDescription = s.sendIconDesc,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
-                        text = "Отправить в Telegram",
+                        text = s.sendButton,
                         style = TextStyle(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold
@@ -272,13 +270,13 @@ fun MainScreen(
                 }
             }
 
-            // 5. Section Heading: "Последние отправки"
+            // 5. Section Heading: Recent Sends
             Text(
-                text = "Последние отправки",
+                text = s.recentSends,
                 style = TextStyle(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B) // Slate 800
+                    color = Color(0xFF1E293B)
                 ),
                 modifier = Modifier.padding(top = 8.dp)
             )
@@ -297,12 +295,12 @@ fun MainScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.CloudDownload,
-                            contentDescription = "Пусто",
+                            contentDescription = s.historyEmptyIconDesc,
                             tint = Color(0xFFCBD5E1),
                             modifier = Modifier.size(48.dp)
                         )
                         Text(
-                            text = "История пуста. Отправьте ссылку первыми!",
+                            text = s.historyEmpty,
                             style = TextStyle(
                                 fontSize = 14.sp,
                                 color = Color(0xFF94A3B8)
@@ -311,17 +309,12 @@ fun MainScreen(
                     }
                 }
             } else {
-                // Hoisted out of `items`. The item-content lambda captured the
-                // ViewModel, which Compose infers unstable, so the compiler never
-                // memoised it and the LazyColumn rebuilt its whole item provider — and
-                // re-boxed a key for every row — four times a second while a download
-                // reported progress.
                 val onOpenLink: (String) -> Unit = remember(context) {
                     { link ->
                         try {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
                         } catch (e: Exception) {
-                            Log.w("MainScreen", "Не удалось открыть ссылку: ${e.message}")
+                            Log.w("MainScreen", "Failed to open link: ${e.message}")
                         }
                     }
                 }
@@ -360,6 +353,7 @@ fun HistoryCard(
     onDelete: (HistoryEntry) -> Unit,
     onRetry: (HistoryEntry) -> Unit
 ) {
+    val s = strings
     var expandedMenu by remember { mutableStateOf(false) }
 
     Card(
@@ -381,10 +375,6 @@ fun HistoryCard(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 1. Beautiful Gradient Thumbnail Placeholder on the Left
-            //
-            // Keyed on the path so the existence check — a blocking stat() — happens
-            // once per row rather than on every recomposition of every visible row.
             val thumbFile = remember(entry.thumbnailPath) {
                 entry.thumbnailPath?.let { File(it) }?.takeIf { it.isFile }
             }
@@ -413,7 +403,6 @@ fun HistoryCard(
                     )
                 }
 
-                // Play overlay or photo count overlay
                 if (entry.type == "carousel") {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -437,7 +426,6 @@ fun HistoryCard(
                         }
                     }
                     if (thumbFile == null) {
-                        // Photo stack icon in the center if no thumbnail
                         Icon(
                             imageVector = Icons.Default.Collections,
                             contentDescription = "Carousel",
@@ -446,7 +434,6 @@ fun HistoryCard(
                         )
                     }
                 } else {
-                    // Play icon in center
                     Box(
                         modifier = Modifier
                             .size(28.dp)
@@ -460,7 +447,7 @@ fun HistoryCard(
                             tint = Color(0xFFEC4899),
                             modifier = Modifier
                                 .size(16.dp)
-                                .offset(x = 1.dp) // Align arrow visually
+                                .offset(x = 1.dp)
                         )
                     }
                 }
@@ -475,7 +462,6 @@ fun HistoryCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Small Category badge icon
                     Box(
                         modifier = Modifier
                             .size(24.dp)
@@ -494,7 +480,7 @@ fun HistoryCard(
                     }
 
                     Text(
-                        text = if (entry.type == "carousel") "Фото (${entry.mediaCount})" else "Видео",
+                        text = if (entry.type == "carousel") String.format(s.typePhoto, entry.mediaCount) else s.typeVideo,
                         style = TextStyle(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
@@ -505,7 +491,7 @@ fun HistoryCard(
 
                 // Friendly relative timestamp
                 Text(
-                    text = remember(entry.timestamp) { getRelativeTimeString(entry.timestamp) },
+                    text = remember(entry.timestamp, s) { getRelativeTimeString(entry.timestamp, s) },
                     style = TextStyle(
                         fontSize = 12.sp,
                         color = Color(0xFF64748B)
@@ -514,19 +500,17 @@ fun HistoryCard(
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // Custom Badge: "Отправлено в Telegram" or "Ошибка отправки"
                 val isSuccess = entry.status == "done"
                 val isError = entry.status == "error"
-                val isDownloading = entry.status == "downloading"
 
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(
                             when {
-                                isSuccess -> Color(0xFFF1F5F9) // Slate 100
-                                isError -> Color(0xFFFEF2F2) // Red 50
-                                else -> Color(0xFFEFF6FF) // Blue 50
+                                isSuccess -> Color(0xFFF1F5F9)
+                                isError -> Color(0xFFFEF2F2)
+                                else -> Color(0xFFEFF6FF)
                             }
                         )
                         .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -543,17 +527,17 @@ fun HistoryCard(
                             },
                             contentDescription = null,
                             tint = when {
-                                isSuccess -> Color(0xFF475569) // Slate 600
-                                isError -> Color(0xFFEF4444) // Red 500
-                                else -> Color(0xFF3B82F6) // Blue 500
+                                isSuccess -> Color(0xFF475569)
+                                isError -> Color(0xFFEF4444)
+                                else -> Color(0xFF3B82F6)
                             },
                             modifier = Modifier.size(11.dp)
                         )
                         Text(
                             text = when {
-                                isSuccess -> "Отправлено в Telegram"
-                                isError -> "Ошибка отправки"
-                                else -> "Отправка…"
+                                isSuccess -> s.statusSent
+                                isError -> s.statusError
+                                else -> s.statusSending
                             },
                             style = TextStyle(
                                 fontSize = 10.sp,
@@ -575,7 +559,6 @@ fun HistoryCard(
                 verticalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxHeight()
             ) {
-                // More options Menu button
                 Box {
                     IconButton(
                         onClick = { expandedMenu = true },
@@ -585,7 +568,7 @@ fun HistoryCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Опции",
+                            contentDescription = s.optionsIconDesc,
                             tint = Color(0xFF94A3B8),
                             modifier = Modifier.size(20.dp)
                         )
@@ -597,7 +580,7 @@ fun HistoryCard(
                     ) {
                         if (entry.status == "error") {
                             DropdownMenuItem(
-                                text = { Text("Повторить", color = Color(0xFF3B82F6)) },
+                                text = { Text(s.menuRetry, color = Color(0xFF3B82F6)) },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.Refresh,
@@ -612,7 +595,7 @@ fun HistoryCard(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text("Удалить", color = Color.Red) },
+                            text = { Text(s.menuDelete, color = Color.Red) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
@@ -631,20 +614,19 @@ fun HistoryCard(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Beautiful circle status indicator (Success: green check, Error: red cross, Progress: spinner)
                 when (entry.status) {
                     "done" -> {
                         Box(
                             modifier = Modifier
                                 .size(26.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFECFDF5)), // Green 50
+                                .background(Color(0xFFECFDF5)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = "Done",
-                                tint = Color(0xFF10B981), // Green 500
+                                tint = Color(0xFF10B981),
                                 modifier = Modifier.size(14.dp)
                             )
                         }
@@ -654,13 +636,13 @@ fun HistoryCard(
                             modifier = Modifier
                                 .size(26.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFFEF2F2)), // Red 50
+                                .background(Color(0xFFFEF2F2)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Error",
-                                tint = Color(0xFFEF4444), // Red 500
+                                tint = Color(0xFFEF4444),
                                 modifier = Modifier.size(14.dp)
                             )
                         }
@@ -678,27 +660,40 @@ fun HistoryCard(
     }
 }
 
-// Relative friendly time formatter matching the screenshot values perfectly
-private fun getRelativeTimeString(timestamp: Long): String {
+// Relative friendly time formatter
+private fun getRelativeTimeString(timestamp: Long, s: AppStrings): String {
     val now = System.currentTimeMillis()
     val diff = now - timestamp
-    if (diff < 0) return "Только что"
+    if (diff < 0) return s.timeJustNow
     val minutes = diff / (60 * 1000)
-    if (minutes < 1) return "Только что"
-    if (minutes < 60) return "${russianPlural(minutes, "минуту", "минуты", "минут")} назад"
+    if (minutes < 1) return s.timeJustNow
+
+    val isRu = s === AppStrings.RU
+
+    if (minutes < 60) {
+        return if (isRu) {
+            "${russianPlural(minutes, "минуту", "минуты", "минут")} назад"
+        } else {
+            "$minutes min ago"
+        }
+    }
 
     val hours = minutes / 60
     val days = hours / 24
-    if (days >= 7) return DATE_FORMAT.get().format(Date(timestamp))
+    val timeFormatter = TIME_FORMAT.get() ?: SimpleDateFormat("HH:mm", Locale.getDefault())
+    val dateFormatter = DATE_FORMAT.get() ?: SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
 
-    val time = TIME_FORMAT.get().format(Date(timestamp))
+    if (days >= 7) return dateFormatter.format(Date(timestamp))
+
+    val time = timeFormatter.format(Date(timestamp))
     return when {
-        // YEAR has to be compared too: DAY_OF_YEAR alone makes 1 Jan 2024 look like
-        // "today" when the same date is viewed on 1 Jan of a later year.
         isSameCalendarDay(now, timestamp) -> time
-        // 24-47 hours ago is the previous calendar day in all but a DST edge case.
-        days <= 1L -> "Вчера • $time"
-        else -> "${russianPlural(days, "день", "дня", "дней")} назад"
+        days <= 1L -> "${s.timeYesterday} • $time"
+        else -> if (isRu) {
+            "${russianPlural(days, "день", "дня", "дней")} назад"
+        } else {
+            "$days day${if (days == 1L) "" else "s"} ago"
+        }
     }
 }
 
@@ -721,10 +716,6 @@ private fun russianPlural(count: Long, one: String, few: String, many: String): 
     }
 }
 
-/**
- * `SimpleDateFormat` builds a `DecimalFormat` and a `Calendar` per construction, and
- * it is not thread-safe — hence one instance per thread rather than a shared one.
- */
 private val TIME_FORMAT = object : ThreadLocal<SimpleDateFormat>() {
     override fun initialValue() = SimpleDateFormat("HH:mm", Locale.getDefault())
 }
@@ -733,13 +724,9 @@ private val DATE_FORMAT = object : ThreadLocal<SimpleDateFormat>() {
     override fun initialValue() = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
 }
 
-/**
- * Built once rather than per row per composition. Each `Brush.radialGradient` call
- * allocates a colour list, a brush and — at draw time — a new shader object.
- */
 private val CAROUSEL_GRADIENT = Brush.radialGradient(
-    colors = listOf(Color(0xFF818CF8), Color(0xFF6366F1)) // Beautiful Purple-Blue
+    colors = listOf(Color(0xFF818CF8), Color(0xFF6366F1))
 )
 private val VIDEO_GRADIENT = Brush.radialGradient(
-    colors = listOf(Color(0xFFF472B6), Color(0xFFEC4899)) // Beautiful Pink-Red
+    colors = listOf(Color(0xFFF472B6), Color(0xFFEC4899))
 )

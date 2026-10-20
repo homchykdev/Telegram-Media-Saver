@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -19,8 +20,10 @@ import androidx.core.content.ContextCompat
 import com.example.ui.MainScreen
 import com.example.ui.MainViewModel
 import com.example.ui.OnboardingScreen
+import com.example.ui.ProvideStrings
 import com.example.ui.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
+import com.example.util.LocaleHelper
 
 /**
  * The app's only full-screen entry point (launcher icon).
@@ -39,6 +42,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val initialLang = viewModel.settingsStore.getLanguage()
+        LocaleHelper.applyLocale(this, initialLang)
         enableEdgeToEdge()
         requestNotificationPermissionIfNeeded()
 
@@ -48,24 +53,41 @@ class MainActivity : ComponentActivity() {
                 var onboardingDone by rememberSaveable {
                     mutableStateOf(viewModel.settingsStore.isOnboardingComplete())
                 }
+                var langCode by rememberSaveable {
+                    mutableStateOf(initialLang)
+                }
 
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    when {
-                        !onboardingDone -> OnboardingScreen(
-                            viewModel = viewModel,
-                            onFinish = {
-                                viewModel.settingsStore.setOnboardingComplete()
-                                onboardingDone = true
-                            }
-                        )
-                        showSettings -> SettingsScreen(
-                            viewModel = viewModel,
-                            onBack = { showSettings = false }
-                        )
-                        else -> MainScreen(
-                            viewModel = viewModel,
-                            onOpenSettings = { showSettings = true }
-                        )
+                LaunchedEffect(langCode) {
+                    LocaleHelper.applyLocale(this@MainActivity, langCode)
+                }
+
+                ProvideStrings(langCode) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        when {
+                            !onboardingDone -> OnboardingScreen(
+                                viewModel = viewModel,
+                                onFinish = {
+                                    viewModel.settingsStore.setOnboardingComplete()
+                                    onboardingDone = true
+                                },
+                                onLanguageChanged = { newLang ->
+                                    langCode = newLang
+                                    LocaleHelper.applyLocale(this@MainActivity, newLang)
+                                }
+                            )
+                            showSettings -> SettingsScreen(
+                                viewModel = viewModel,
+                                onBack = { newLang ->
+                                    langCode = newLang
+                                    LocaleHelper.applyLocale(this@MainActivity, newLang)
+                                    showSettings = false
+                                }
+                            )
+                            else -> MainScreen(
+                                viewModel = viewModel,
+                                onOpenSettings = { showSettings = true }
+                            )
+                        }
                     }
                 }
             }

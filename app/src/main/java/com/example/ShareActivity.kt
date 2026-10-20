@@ -59,6 +59,7 @@ import com.example.data.HistoryType
 import com.example.data.SettingsStore
 import com.example.domain.LinkDetector
 import com.example.ui.theme.MyApplicationTheme
+import com.example.util.LocaleHelper
 import com.example.worker.DownloadWorker
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -66,38 +67,16 @@ import kotlinx.coroutines.withContext
 
 /**
  * Share-sheet entry point.
- *
- * This activity uses a fully transparent window so the source app (TikTok, browser, etc.)
- * remains visible behind it. The bottom sheet card is drawn as a Compose composable that
- * sits at the bottom of the screen — identical to how YTDLnis renders its share overlay.
- *
- * Key properties that make this work:
- *   • Theme.MediaSaver.Translucent  → transparent window background before Compose starts
- *   • windowIsFloating=false        → keeps the activity full-screen so insets work correctly
- *   • taskAffinity=<appId>.share    → own task: dismiss returns to the source app
- *   • excludeFromRecents=true       → never appears in the Recents list
- *   • singleTask + onNewIntent      → a second share replaces the link in the open sheet
- *   • The scrim (clicking outside the card) calls finish() to dismiss
  */
 class ShareActivity : ComponentActivity() {
 
-    /**
-     * The link currently shown in the sheet.
-     *
-     * Held as state rather than a local so a second share can replace it: this
-     * activity is `singleInstance`, so the system delivers the next share to
-     * [onNewIntent] instead of creating a new instance, and a sheet still showing the
-     * previous link would submit that link again — a second upload of a video the user
-     * never asked for twice.
-     */
     private val sharedUrl = mutableStateOf<String?>(null)
-
-    /** Set from the moment a submit is accepted until the sheet is torn down. */
     private val submitting = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Make both status bar and navigation bar fully transparent so the source
-        // app's content shines through edge-to-edge.
+        val settings = SettingsStore(this)
+        LocaleHelper.applyLocale(this, settings.getLanguage())
+
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
                 AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT
@@ -108,10 +87,8 @@ class ShareActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
 
-        // Keep the window itself transparent. The card Surface handles its own background.
         window.apply {
             setBackgroundDrawableResource(android.R.color.transparent)
-            // Allow the activity to draw behind system bars.
             addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
         }
 
@@ -137,7 +114,6 @@ class ShareActivity : ComponentActivity() {
 
     private fun Intent.detectUrl(): String? = LinkDetector.detectTikTokUrl(extractSharedText())
 
-    /** Reads the shared payload from either an ACTION_SEND or an ACTION_VIEW intent. */
     private fun Intent.extractSharedText(): String? = when (action) {
         Intent.ACTION_SEND -> when (type) {
             "text/plain" -> getStringExtra(Intent.EXTRA_TEXT)
@@ -147,21 +123,9 @@ class ShareActivity : ComponentActivity() {
         else -> null
     }
 
-    /**
-     * Validates, records the entry and enqueues the worker. Returns false when the
-     * user still needs to fix something (bad link or missing credentials), in which
-     * case the sheet stays open.
-     */
     private fun submit(url: String): Boolean {
-        // Each submit inserts its own history row, and the unique work name is derived
-        // from that row's id — so two accepted taps mean two unrelated workers, both of
-        // which upload the same video. The sheet stays open until finish(), and a fast
-        // double tap easily lands inside that window.
         if (submitting.value) return false
 
-        // Re-detected rather than trusted: the value that reaches the caption is
-        // interpolated into HTML with parse_mode=HTML, so a stray `<` from an
-        // arbitrary shared text would make Telegram reject the whole upload.
         val detected = LinkDetector.detectTikTokUrl(url)
         if (detected == null) {
             toast(getString(R.string.share_sheet_unsupported))
@@ -196,8 +160,6 @@ class ShareActivity : ComponentActivity() {
                         )
                     )
                     .addTag(DownloadWorker.TAG_DOWNLOAD)
-                    // Without this the startup reconciler cannot tell a live
-                    // share-sheet download from an orphaned row.
                     .addTag(DownloadWorker.entryTag(entryId))
                     .build()
 
@@ -218,12 +180,6 @@ class ShareActivity : ComponentActivity() {
         android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
 }
 
-/**
- * Full-screen overlay with a transparent scrim and a bottom-anchored card.
- *
- * Tapping the scrim area (outside the card) calls [onDismiss] so the user can
- * cancel without pressing the close button — same UX as a BottomSheetDialog.
- */
 @Composable
 private fun ShareOverlay(
     url: String?,
@@ -231,14 +187,11 @@ private fun ShareOverlay(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // Keyed on `url` so a second share (delivered to the same singleInstance activity)
-    // replaces the link instead of keeping the previous one on screen.
     var urlInput by remember(url) { mutableStateOf(url ?: "") }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // Semi-transparent dark scrim — tapping it dismisses the sheet.
             .background(Color(0x80000000))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -247,7 +200,6 @@ private fun ShareOverlay(
             ),
         contentAlignment = Alignment.BottomCenter
     ) {
-        // The card itself. Clicks on it must NOT propagate to the scrim.
         Surface(
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -257,16 +209,14 @@ private fun ShareOverlay(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = {} // consume the click so it doesn't reach the scrim
+                    onClick = {}
                 )
-                // Pad the bottom edge away from the navigation bar.
                 .windowInsetsPadding(WindowInsets.navigationBars)
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Handle bar (decorative)
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterHorizontally)
@@ -342,7 +292,6 @@ private fun ShareOverlay(
     }
 }
 
-/** Retrieves a string resource from the current composable context. */
 @Composable
 private fun getString(id: Int): String =
     androidx.compose.ui.platform.LocalContext.current.getString(id)

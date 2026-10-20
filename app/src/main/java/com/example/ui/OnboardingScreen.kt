@@ -37,18 +37,19 @@ import androidx.compose.ui.unit.sp
  *   Step 2 – Group ID input with instructions
  *   Step 3 – Connection test & finish
  *
- * [onFinish] is called when the user either completes setup or taps "Skip".
- * The caller is responsible for persisting the "onboarding done" flag so the
- * wizard is not shown again.
+ * Choosing a language in Step 0 sets the app-wide language immediately.
  */
 @Composable
 fun OnboardingScreen(
     viewModel: MainViewModel,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
+    onLanguageChanged: (String) -> Unit = {}
 ) {
     // 0 = language, 1 = bot token, 2 = group id, 3 = test
     var step by remember { mutableStateOf(0) }
-    var lang by remember { mutableStateOf(Lang.EN) }
+    var lang by remember {
+        mutableStateOf(if (viewModel.settingsStore.getLanguage() == "ru") Lang.RU else Lang.EN)
+    }
 
     // Collected once so settings survive recompositions within the wizard.
     var tokenInput by remember { mutableStateOf(viewModel.settingsStore.getBotToken()) }
@@ -62,6 +63,8 @@ fun OnboardingScreen(
         viewModel.settingsStore.setGroupId(groupIdInput)
         step = nextStep
     }
+
+    val s = if (lang == Lang.EN) AppStrings.EN else AppStrings.RU
 
     Box(
         modifier = Modifier
@@ -131,12 +134,22 @@ fun OnboardingScreen(
                 when (currentStep) {
                     0 -> LanguageStep(
                         selectedLang = lang,
-                        onSelect = { lang = it },
-                        onContinue = { step = 1 }
+                        onSelect = {
+                            lang = it
+                            val code = if (it == Lang.EN) "en" else "ru"
+                            viewModel.settingsStore.setLanguage(code)
+                            onLanguageChanged(code)
+                        },
+                        onContinue = {
+                            val code = if (lang == Lang.EN) "en" else "ru"
+                            viewModel.settingsStore.setLanguage(code)
+                            onLanguageChanged(code)
+                            step = 1
+                        }
                     )
 
                     1 -> BotTokenStep(
-                        lang = lang,
+                        s = s,
                         tokenInput = tokenInput,
                         onTokenChange = { tokenInput = it },
                         onNext = { saveAndAdvance(2) },
@@ -148,7 +161,7 @@ fun OnboardingScreen(
                     )
 
                     2 -> GroupIdStep(
-                        lang = lang,
+                        s = s,
                         groupIdInput = groupIdInput,
                         onGroupIdChange = { groupIdInput = it },
                         onNext = { saveAndAdvance(3) },
@@ -161,7 +174,7 @@ fun OnboardingScreen(
                     )
 
                     3 -> TestStep(
-                        lang = lang,
+                        s = s,
                         tokenInput = tokenInput,
                         groupIdInput = groupIdInput,
                         testState = testState,
@@ -185,8 +198,6 @@ fun OnboardingScreen(
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum class Lang { EN, RU }
-
-private fun Lang.str(en: String, ru: String) = if (this == Lang.EN) en else ru
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Step indicator
@@ -324,7 +335,7 @@ private fun LanguageCard(
 
 @Composable
 private fun BotTokenStep(
-    lang: Lang,
+    s: AppStrings,
     tokenInput: String,
     onTokenChange: (String) -> Unit,
     onNext: () -> Unit,
@@ -337,21 +348,11 @@ private fun BotTokenStep(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         StepHeading(
-            title = lang.str("Step 1 of 3", "Шаг 1 из 3"),
-            subtitle = lang.str("Telegram Bot Token", "Telegram Bot Token")
+            title = s.onboardingStep1Title,
+            subtitle = s.onboardingStep1Subtitle
         )
 
-        InstructionCard(
-            steps = if (lang == Lang.EN) listOf(
-                "Open @BotFather in Telegram",
-                "Send /newbot, pick a name and username",
-                "Copy the token (looks like 123456789:AAExxxxxx…)"
-            ) else listOf(
-                "Откройте @BotFather в Telegram",
-                "Отправьте /newbot, придумайте имя и username",
-                "Скопируйте токен (вида 123456789:AAExxxxxx…)"
-            )
-        )
+        InstructionCard(steps = s.onboardingStep1Instructions)
 
         OutlinedTextField(
             value = tokenInput,
@@ -363,18 +364,15 @@ private fun BotTokenStep(
             visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
             trailingIcon = {
                 TextButton(onClick = { showToken = !showToken }) {
-                    Text(
-                        if (showToken) lang.str("Hide", "Скрыть")
-                        else lang.str("Show", "Показать")
-                    )
+                    Text(if (showToken) s.hideToken else s.showToken)
                 }
             }
         )
 
         NavigationRow(
             nextEnabled = tokenInput.isNotBlank(),
-            nextLabel = lang.str("Next →", "Далее →"),
-            skipLabel = lang.str("Skip setup", "Пропустить настройку"),
+            nextLabel = s.onboardingNext,
+            skipLabel = s.onboardingSkip,
             onNext = onNext,
             onSkip = onSkip
         )
@@ -387,7 +385,7 @@ private fun BotTokenStep(
 
 @Composable
 private fun GroupIdStep(
-    lang: Lang,
+    s: AppStrings,
     groupIdInput: String,
     onGroupIdChange: (String) -> Unit,
     onNext: () -> Unit,
@@ -399,26 +397,16 @@ private fun GroupIdStep(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         StepHeading(
-            title = lang.str("Step 2 of 3", "Шаг 2 из 3"),
-            subtitle = lang.str("Telegram Group / Channel ID", "ID группы / канала Telegram")
+            title = s.onboardingStep2Title,
+            subtitle = s.onboardingStep2Subtitle
         )
 
-        InstructionCard(
-            steps = if (lang == Lang.EN) listOf(
-                "Create or open a Telegram group (not a channel or direct chat), add your bot as member",
-                "Make it an admin with at least the Post Messages permission",
-                "Open @username_to_id_bot, tap the attachment icon, choose a chat → select your group — it replies with the Chat ID (starts with -100)"
-            ) else listOf(
-                "Создайте или откройте Telegram-группу (не канал и не личный чат), добавьте бота участником",
-                "Назначьте его администратором с правом «Публикации сообщений»",
-                "Откройте @username_to_id_bot, нажмите скрепку, выберите чат → укажите группу — бот ответит Chat ID (начинается с -100)"
-            )
-        )
+        InstructionCard(steps = s.onboardingStep2Instructions)
 
         OutlinedTextField(
             value = groupIdInput,
             onValueChange = onGroupIdChange,
-            label = { Text(lang.str("Group / Channel ID", "ID группы / канала")) },
+            label = { Text(s.onboardingGroupIdLabel) },
             placeholder = { Text("-1001234567890") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
@@ -426,8 +414,8 @@ private fun GroupIdStep(
 
         NavigationRow(
             nextEnabled = groupIdInput.isNotBlank(),
-            nextLabel = lang.str("Next →", "Далее →"),
-            skipLabel = lang.str("Skip setup", "Пропустить настройку"),
+            nextLabel = s.onboardingNext,
+            skipLabel = s.onboardingSkip,
             onNext = onNext,
             onSkip = onSkip,
             onBack = onBack
@@ -441,7 +429,7 @@ private fun GroupIdStep(
 
 @Composable
 private fun TestStep(
-    lang: Lang,
+    s: AppStrings,
     tokenInput: String,
     groupIdInput: String,
     testState: MainViewModel.TestState,
@@ -457,8 +445,8 @@ private fun TestStep(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         StepHeading(
-            title = lang.str("Step 3 of 3", "Шаг 3 из 3"),
-            subtitle = lang.str("Test connection", "Проверка подключения")
+            title = s.onboardingStep3Title,
+            subtitle = s.onboardingStep3Subtitle
         )
 
         // Summary card
@@ -482,7 +470,7 @@ private fun TestStep(
                 HorizontalDivider()
                 SummaryRow(
                     icon = Icons.Default.Group,
-                    label = lang.str("Group ID", "ID группы"),
+                    label = s.onboardingGroupIdRowLabel,
                     value = groupIdInput
                 )
             }
@@ -499,7 +487,7 @@ private fun TestStep(
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         Text(
-                            text = lang.str("Checking…", "Проверка…"),
+                            text = s.onboardingChecking,
                             color = Color(0xFF64748B)
                         )
                     }
@@ -507,16 +495,13 @@ private fun TestStep(
                 is MainViewModel.TestState.Success -> {
                     ResultBanner(
                         success = true,
-                        message = lang.str(
-                            "✅ Connection successful! You're all set.",
-                            "✅ Подключение успешно! Всё готово к работе."
-                        )
+                        message = s.onboardingConnOk
                     )
                 }
                 is MainViewModel.TestState.Error -> {
                     ResultBanner(
                         success = false,
-                        message = lang.str("❌ Error: ", "❌ Ошибка: ") + state.errorMsg
+                        message = s.onboardingConnErr + state.errorMsg
                     )
                 }
                 else -> {}
@@ -540,7 +525,7 @@ private fun TestStep(
                 )
             } else {
                 Text(
-                    text = lang.str("Test connection", "Проверить подключение"),
+                    text = s.onboardingTestBtn,
                     style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 )
             }
@@ -558,10 +543,7 @@ private fun TestStep(
             )
         ) {
             Text(
-                text = if (isSuccess)
-                    lang.str("Finish setup 🎉", "Завершить настройку 🎉")
-                else
-                    lang.str("Finish anyway", "Завершить без проверки"),
+                text = if (isSuccess) s.onboardingFinishBtn else s.onboardingFinishAnyway,
                 style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             )
         }
@@ -571,7 +553,7 @@ private fun TestStep(
             modifier = Modifier.align(Alignment.CenterHorizontally)
         ) {
             Text(
-                text = lang.str("← Back", "← Назад"),
+                text = "← ${s.back}",
                 color = Color(0xFF64748B)
             )
         }

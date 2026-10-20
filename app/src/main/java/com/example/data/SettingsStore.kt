@@ -109,6 +109,9 @@ class SettingsStore(private val context: Context) {
     fun getSuccessSoundVolume(): Float = SecureSettings.getFloat(context, "success_sound_volume", 1.0f)
     fun setSuccessSoundVolume(volume: Float) = SecureSettings.put(context, "success_sound_volume", volume)
 
+    fun getLanguage(): String = SecureSettings.getString(context, "app_language", "en")
+    fun setLanguage(lang: String) = SecureSettings.put(context, "app_language", lang)
+
     /** Every stored sound value, used to garbage-collect unreferenced imports. */
     fun storedSoundValues(): List<String> = listOf(getErrorSound(), getSuccessSound())
 }

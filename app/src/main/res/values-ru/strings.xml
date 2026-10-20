@@ -1,0 +1,69 @@
+<resources>
+    <string name="app_name">Media Saver</string>
+    <!-- Label shown in the system share sheet. Must stay short: it is rendered as
+         a single line next to the app icon. -->
+    <string name="share_target_label">В Telegram</string>
+
+    <string name="share_sheet_title">Скачать медиа</string>
+    <string name="share_sheet_confirm">Скачать</string>
+    <string name="share_sheet_unsupported">Не удалось распознать ссылку TikTok в полученном тексте.</string>
+
+    <string name="notif_channel_progress">Загрузка медиа</string>
+    <string name="notif_channel_progress_desc">Показывает прогресс текущей загрузки</string>
+    <string name="notif_channel_success">Успешная загрузка</string>
+    <string name="notif_channel_success_desc">Уведомления об успешной отправке медиа</string>
+    <string name="notif_channel_error">Ошибка</string>
+    <string name="notif_channel_error_desc">Уведомления об ошибках скачивания и отправки</string>
+
+    <!-- Alert sounds -->
+    <string name="sound_builtin_warning">Космический бластер (предупреждение)</string>
+    <string name="sound_builtin_alarm">Сигнал тревоги</string>
+    <string name="sound_builtin_success">Приятный сигнал</string>
+    <string name="sound_none">Без звука</string>
+    <string name="sound_pick_own">Выбрать свой звук…</string>
+    <string name="sound_own_section">Мои звуки</string>
+    <string name="sound_own_empty">Свои звуки ещё не добавлены.</string>
+    <string name="sound_listen">Прослушать</string>
+    <string name="sound_delete">Удалить</string>
+    <string name="sound_in_use">Этот звук сейчас выбран. Сначала выберите другой.</string>
+    <string name="sound_import_failed">Не удалось добавить звук</string>
+    <string name="sound_selected">Выбран звук: %1$s</string>
+    <string name="sound_section_error">Звук при ошибке</string>
+    <string name="sound_section_success">Звук при успешной отправке</string>
+    <string name="sound_volume">Громкость</string>
+    <string name="sound_custom_badge">Свой</string>
+    <string name="sound_missing">Файл звука не найден — выберите звук заново</string>
+
+    <string name="notif_progress_title">Загрузка медиа…</string>
+
+    <string name="share_sheet_queued">Загрузка добавлена в очередь</string>
+    <string name="error_missing_credentials">Сначала укажите токен бота и Group ID в настройках</string>
+
+    <!-- Worker & notifications -->
+    <string name="worker_preparing">Подготовка…</string>
+    <string name="worker_api">Обращение к API TikWM…</string>
+    <string name="worker_sending_video">Отправка в Telegram…</string>
+    <string name="worker_sending_carousel">Отправка карусели в Telegram…</string>
+    <string name="worker_done">Готово</string>
+    <string name="worker_downloading_video">Скачивание видео…</string>
+    <string name="worker_video_too_large">Видео слишком большое, пробуем качество ниже…</string>
+    <string name="worker_downloading_video_fallback">Скачивание видео (запасное качество)…</string>
+    <string name="worker_downloading_photo">Загрузка фото (%1$d/%2$d)…</string>
+    <string name="worker_notif_success_title">Успешно</string>
+    <string name="worker_notif_video_success">Видео скачано и загружено в группу</string>
+    <string name="worker_notif_carousel_success">Карусель из %1$d фото загружена в группу</string>
+    <string name="worker_notif_error_title">Ошибка скачивания</string>
+    <string name="worker_error_video_limit">Видео весит %1$d МБ, а Telegram Bot API принимает не больше 50 МБ. У TikTok нет варианта меньшего размера для этого ролика.</string>
+    <string name="worker_error_missing_creds">Не заполнены токен бота или Group ID в настройках</string>
+    <string name="worker_unknown_error">Произошла неизвестная ошибка</string>
+
+    <!-- ViewModel -->
+    <string name="error_invalid_url">Неверный формат ссылки. Поддерживается только TikTok.</string>
+    <string name="msg_media_sent">Медиа успешно отправлено</string>
+    <string name="error_enqueue_failed">Не удалось поставить загрузку в очередь</string>
+    <string name="status_processing">Обработка…</string>
+    <string name="error_download_or_send">Ошибка при скачивании или отправке</string>
+    <string name="status_cancelled_by_user">Отменено пользователем</string>
+    <string name="error_invalid_token_or_group">Неверный формат токена или ID чата.</string>
+    <string name="error_network_test">Сетевая ошибка при проверке</string>
+</resources>

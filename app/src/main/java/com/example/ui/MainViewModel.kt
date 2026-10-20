@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.example.R
 import com.example.data.AppDatabase
 import com.example.data.HistoryEntry
 import com.example.data.HistoryRepository
@@ -50,32 +51,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _cacheSize = MutableStateFlow(0L)
     val cacheSize: StateFlow<Long> = _cacheSize.asStateFlow()
 
-    /**
-     * Single collector for the active download. Previously every retry started a new
-     * `collect` that was never cancelled, so a long-lived ViewModel accumulated one
-     * live WorkManager observer per attempt.
-     */
     private var observeJob: Job? = null
     private var activeEntryId: Long = -1L
 
-    /**
-     * True from the moment a send is accepted until the worker it created reaches a
-     * state the UI can act on.
-     *
-     * `UiState.Processing` is only entered once a worker actually reaches RUNNING, and
-     * enqueueing returns long before that, so the window between "tapped" and
-     * "running" had nothing closing it. Every extra tap in that window created its own
-     * history row and its own concurrent worker — each uploading its own copy of the
-     * same video into the group.
-     */
     private val _submitting = MutableStateFlow(false)
     val submitting: StateFlow<Boolean> = _submitting.asStateFlow()
 
     init {
-        // Routed through refreshCacheSize so the throttle covers it. The init block
-        // used to sweep the cache on its own while leaving the timestamp at 0, so the
-        // very first onResume passed the check and repeated the whole sweep — five
-        // recursive walks of the cache tree, twice, on every cold start.
         refreshCacheSize(force = true)
     }
 
@@ -84,7 +66,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun sendMedia(rawUrl: String) {
         val url = LinkDetector.detectTikTokUrl(rawUrl)
         if (url == null) {
-            _uiState.value = UiState.Error("Неверный формат ссылки. Поддерживается только TikTok.")
+            _uiState.value = UiState.Error(getApplication<Application>().getString(R.string.error_invalid_url))
             return
         }
         if (!hasCredentials()) return
@@ -113,13 +95,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Re-submits an entry, but only when nothing is already running for it.
-     *
-     * Without this guard a double tap — or a tap on a row that is genuinely still
-     * uploading — enqueued a second worker, and each one uploaded its own copy of
-     * the same video into the group.
-     */
     fun retryDownload(entry: HistoryEntry) {
         if (!hasCredentials()) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -131,19 +106,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** True while WorkManager still has unfinished work for this history row. */
     private suspend fun hasLiveWork(entryId: Long): Boolean =
         workManager.getWorkInfosForUniqueWorkFlow(DownloadWorker.uniqueWorkName(entryId))
             .first()
             .any { !it.state.isFinished }
 
-    /**
-     * Enqueues the job as *unique* work keyed on the history row.
-     *
-     * `ExistingWorkPolicy.REPLACE` is the fix for the duplicate-download report:
-     * any previous attempt for the same row is cancelled before the new one starts,
-     * so a row can never have two workers uploading the same video at once.
-     */
     private suspend fun startDownload(entryId: Long, url: String) {
         repository.markRunning(entryId)
         activeEntryId = entryId
@@ -171,12 +138,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 when (info.state) {
                     WorkInfo.State.RUNNING -> _uiState.value = UiState.Processing(
                         progress = info.progress.getFloat(DownloadWorker.KEY_PROGRESS, 0f),
-                        statusText = info.progress.getString(DownloadWorker.KEY_STATUS) ?: "Обработка…"
+                        statusText = info.progress.getString(DownloadWorker.KEY_STATUS)
+                            ?: getApplication<Application>().getString(R.string.status_processing)
                     )
 
                     WorkInfo.State.SUCCEEDED -> {
                         _submitting.value = false
-                        _uiState.value = UiState.Success("Медиа успешно отправлено")
+                        _uiState.value = UiState.Success(getApplication<Application>().getString(R.string.msg_media_sent))
                         refreshCacheSize()
                     }
 
@@ -186,7 +154,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     WorkInfo.State.CANCELLED -> {
-                        // A replacement request owns the row now; do not report an error.
                         _submitting.value = false
                         _uiState.value = UiState.Idle
                     }
@@ -198,18 +165,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun readErrorMessage(): String {
-        val entry = repository.get(activeEntryId) ?: return "Ошибка при скачивании или отправке"
-        return entry.errorMessage ?: "Ошибка при скачивании или отправке"
+        val entry = repository.get(activeEntryId) ?: return getApplication<Application>().getString(R.string.error_download_or_send)
+        return entry.errorMessage ?: getApplication<Application>().getString(R.string.error_download_or_send)
     }
 
     fun cancelDownload(entry: HistoryEntry) {
         workManager.cancelUniqueWork(DownloadWorker.uniqueWorkName(entry.id))
         viewModelScope.launch(Dispatchers.IO) {
-            // Guarded in SQL: `cancelUniqueWork` returns long before the worker has
-            // actually stopped, so an unconditional write would race a worker that has
-            // just committed its upload and flip a finished row to "cancelled" —
-            // which offers a "Повторить" button on a video that is already in the group.
-            repository.markCancelled(entry.id, "Отменено пользователем")
+            repository.markCancelled(
+                entry.id,
+                getApplication<Application>().getString(R.string.status_cancelled_by_user)
+            )
             refreshCacheSize()
         }
     }
@@ -233,10 +199,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (telegramClient.testConnection(token, groupId)) {
                     TestState.Success
                 } else {
-                    TestState.Error("Неверный формат токена или ID чата.")
+                    TestState.Error(getApplication<Application>().getString(R.string.error_invalid_token_or_group))
                 }
             } catch (e: Exception) {
-                TestState.Error(e.localizedMessage ?: "Сетевая ошибка при проверке")
+                TestState.Error(e.localizedMessage ?: getApplication<Application>().getString(R.string.error_network_test))
             }
         }
     }
@@ -247,7 +213,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun hasCredentials(): Boolean {
         if (settingsStore.getBotToken().isEmpty() || settingsStore.getGroupId().isEmpty()) {
-            _uiState.value = UiState.Error("Пожалуйста, заполните токен бота и Group ID в настройках.")
+            _uiState.value = UiState.Error(getApplication<Application>().getString(R.string.error_missing_credentials))
             return false
         }
         return true
@@ -255,11 +221,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ------------------------------------------------------------------- cache
 
-    /**
-     * Each pass is 3-5 recursive walks of the whole cache tree, and this runs on
-     * every `onResume` — so the numbers are cached briefly to keep returning to the
-     * app from thrashing the disk.
-     */
     fun refreshCacheSize(force: Boolean = false) {
         val now = System.currentTimeMillis()
         if (!force && now - lastCacheRefreshAt < CACHE_REFRESH_MIN_INTERVAL_MS) return
@@ -274,9 +235,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateCacheSize() = refreshCacheSize(force = true)
     fun autoCleanupCache() = refreshCacheSize(force = true)
 
-    /** Surfaces a worker failure without leaking an internal exception type to the UI. */
     private fun humanMessage(e: Exception): String =
-        e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Не удалось поставить загрузку в очередь"
+        e.localizedMessage?.takeIf { it.isNotBlank() } ?: getApplication<Application>().getString(R.string.error_enqueue_failed)
 
     fun clearCache() {
         lastCacheRefreshAt = 0L
