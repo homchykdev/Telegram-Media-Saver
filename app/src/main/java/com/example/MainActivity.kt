@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.example.ui.MainScreen
 import com.example.ui.MainViewModel
+import com.example.ui.OnboardingScreen
 import com.example.ui.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 
@@ -44,15 +45,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             MyApplicationTheme {
                 var showSettings by rememberSaveable { mutableStateOf(false) }
+                var onboardingDone by rememberSaveable {
+                    mutableStateOf(viewModel.settingsStore.isOnboardingComplete())
+                }
 
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    if (showSettings) {
-                        SettingsScreen(
+                    when {
+                        !onboardingDone -> OnboardingScreen(
+                            viewModel = viewModel,
+                            onFinish = {
+                                viewModel.settingsStore.setOnboardingComplete()
+                                onboardingDone = true
+                            }
+                        )
+                        showSettings -> SettingsScreen(
                             viewModel = viewModel,
                             onBack = { showSettings = false }
                         )
-                    } else {
-                        MainScreen(
+                        else -> MainScreen(
                             viewModel = viewModel,
                             onOpenSettings = { showSettings = true }
                         )

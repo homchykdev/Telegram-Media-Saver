@@ -71,6 +71,13 @@ private object SecureSettings {
 
 class SettingsStore(private val context: Context) {
 
+    /** True after the user has completed or explicitly skipped first-launch setup. */
+    fun isOnboardingComplete(): Boolean =
+        SecureSettings.getInt(context, "onboarding_complete", 0) != 0
+
+    fun setOnboardingComplete() =
+        SecureSettings.put(context, "onboarding_complete", 1)
+
     fun getBotToken(): String = SecureSettings.getString(context, "bot_token", "")
     fun setBotToken(token: String) = SecureSettings.put(context, "bot_token", token.trim())
 
