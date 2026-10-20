@@ -1,380 +1,112 @@
-# Media Saver
+<div align="center">
+  <h1>Media Saver</h1>
+  <p>Android app that saves TikTok videos and photo carousels directly to your Telegram group — no login required.</p>
+</div>
 
-Android-приложение, которое по ссылке на TikTok само находит файл, скачивает его и
-заливает в вашу Telegram-группу через бота.
+<div align="center">
 
-Сценарий использования: вы открыли TikTok (или пост с `tiktok.com` в браузере),
-нажали «Поделиться» → **Media Saver** → приложение распознало ссылку, показало
-подтверждение и в фоне скачало видео/карусель и отправило её в группу. Вам
-остаётся смотреть ролик дальше.
+[English](README.md) &nbsp;|&nbsp; [Русский](README-ru.md)
 
----
+[![GitHub Releases](https://img.shields.io/badge/Download-APK-blue?style=for-the-badge&logo=android&logoColor=white)](https://github.com/YOUR_USERNAME/YOUR_REPO/releases/latest)
+![Android](https://img.shields.io/badge/Android-8.0%2B-brightgreen?style=for-the-badge&logo=android&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.1.0-blue?style=for-the-badge)
 
-## Возможности
-
-- **Разрешение ссылки.** Ссылка разбирается через сторонний API
-  [tikwm.com](https://www.tikwm.com) (`GET /api/?url=...&hd=1`).
-- **Видео или карусель фото.** Если TikTok-пост содержит несколько картинок,
-  приложение скачивает их все и отправляет альбомом (`sendMediaGroup`).
-- **Загрузка в Telegram.** Отправка через **Telegram Bot API** от имени вашего
-  бота в указанную группу, с подписью (заголовок поста + ссылка) и ссылкой на
-  отправленное сообщение.
-- **Фоновая работа.** Загрузка выполняется в `WorkManager` и на время работы
-  поднимается в foreground-сервис, так что система не убьёт задачу при
-  сворачивании приложения или блокировке экрана.
-- **Прогресс и обратная связь.** Прогресс-бар, вибрация, уведомление об успехе
-  или об ошибке (с выбором звука).
-- **История.** Все загрузки сохраняются в Room-базе с превью, статусом и ссылкой
-  на сообщение в Telegram.
-- **Кэш.** Файлы складываются во внутренний кэш и автоматически чистятся по лимиту
-  размера и сроку хранения.
-- **Никаких аккаунтов.** Приложение не просит логин TikTok — оно работает только
-  с публичной ссылкой.
+</div>
 
 ---
 
-## Стек технологий
+## ✨ Features
 
-| Слой | Технологии |
-| --- | --- |
-| Язык | Kotlin 2.2.10 |
-| UI | Jetpack Compose + Material 3 |
-| Архитектура | MVVM-подобная: `MainViewModel` + экраны, `use case` в `domain` |
-| Сеть | OkHttp 4.12 |
-| Фоновые задачи | WorkManager 2.9.1 (`CoroutineWorker`) |
-| Хранилище истории | Room 2.7.0 (KSP) |
-| Секреты | `androidx.security-crypto` (`EncryptedSharedPreferences` + `MasterKey` AES256-GCM) |
-| Асинхронность | Kotlin Coroutines |
-| Изображения | Coil |
-| Сеть/прочее | OkHttp, AndroidX Core KTX, Lifecycle, Activity Compose |
-
-Параметры пакета:
-
-- `applicationId`: `com.aistudio.mediasaver.qwxytz` (сознательно неизменный —
-  иначе обновление установилось бы как новый пакет и потеряло бы базу истории
-  и зашифрованные настройки у пользователей)
-- `minSdk` 26 (Android 8.0), `targetSdk` / `compileSdk` 36
-- `versionCode` 2, `versionName` 1.1.0
-- Java source/target compatibility: 11
-
-Права в манифесте: `INTERNET`, `ACCESS_NETWORK_STATE`, `VIBRATE`,
-`POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`,
-`FOREGROUND_SERVICE_DATA_SYNC`. Foreground-сервис объявлен с типом `dataSync`
-(обязательно на Android 14+).
+- **Share in one tap** — hit Share in TikTok, pick Media Saver, confirm. Done.
+- **Videos & carousels** — downloads single videos or full photo carousels (sent as albums).
+- **Straight to Telegram** — uploads to your group via Bot API with title and a link back to the post.
+- **Runs in the background** — WorkManager keeps the job alive even when the screen is off.
+- **Download history** — every job is saved locally with thumbnail, status, and a link to the Telegram message.
+- **No TikTok login needed** — works with any public link.
 
 ---
 
-## Установка и первый запуск
+## 📲 Installation
 
-Единственная обязательная настройка — **связка «бот + группа»**. Приложение не
-работает без неё: воркер сразу падает с ошибкой
-«Токен бота или Group ID не заполнены в настройках».
+1. Go to the [**Releases**](https://github.com/YOUR_USERNAME/YOUR_REPO/releases/latest) page.
+2. Download the latest `.apk` file.
+3. Open the APK on your phone and tap **Install**.  
+   *(Allow "Install from unknown sources" if prompted — Settings → Apps → Special app access.)*
 
-### 1. Создайте бота через @BotFather
-
-1. Откройте [@BotFather](https://t.me/BotFather) в Telegram.
-2. Отправьте `/newbot`.
-3. Задайте имя и username бота.
-4. Скопируйте выданный **токен** вида
-   `123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`.
-
-> Токен — это пароль от вашего бота. Не публикуйте его и не отправляйте никому.
-> При утечке его нужно отозвать через `/revoke` у @BotFather и создать нового бота.
-
-### 2. Добавьте бота в целевую группу
-
-1. Создайте группу (или возьмите существующую) — это должна быть **группа**, а не
-   личный чат с ботом и не канал.
-2. Добавьте бота в участники группы.
-3. **Выдайте боту права администратора.** Как минимум:
-   - **Публикация сообщений** (`can_post_messages`) — иначе `sendVideo` и
-     `sendMediaGroup` будут отклонены с ошибкой `403 not enough rights`,
-   - желательно **Удаление сообщений**, чтобы бот мог убирать свои служебные
-     сообщения при неудачной отправке.
-
-Быстрый способ: откройте группу → «Администраторы» → «Добавить администратора» →
-выберите бота → отметьте «Публикация сообщений».
-
-### 3. Узнайте chat id группы
-
-Нужен **chat id** самой группы, а не вашего аккаунта и не id бота. У обычной
-группы он начинается с `-100` (например, `-1001234567890`).
-
-Способы:
-
-- **Веб-версия Telegram.** Откройте `web.telegram.org` (лучше в режиме
-  «Test»), войдите в группу, скопируйте ссылку на любое сообщение вида
-  `https://web.telegram.org/k/#!/-1001234567890/123` — число после `#!` и есть
-  chat id.
-- **Через стороннего бота.** Любой бот-инспектор (например `@RawDataBot` или
-  `@getidsbot`) покажет `chat.id` при вызове в группе.
-- **Простой способ без сторонних сервисов.** Отправьте в группу любое сообщение
-  и откройте его в браузере через `web.telegram.org/k/#!<id>/<message_id>` —
-  `id` из ссылки и есть chat id группы (со знаком минус и префиксом `-100`).
-
-Супергруппы и каналы дают `-100…`. Приватные группы-чаты дают `-100…` тоже,
-но бот должен в них состоять.
-
-### 4. Внесите данные в приложение
-
-1. Запустите **Media Saver**.
-2. Откройте **Настройки** (иконка шестерёнки на главном экране).
-3. В блоке **Telegram API** вставьте:
-   - **Telegram Bot Token** — токен из шага 1 (поле скрытое, есть кнопка
-     «Показать»);
-   - **Telegram Group ID** — chat id из шага 3 (placeholder подсказывает
-     «Начинается с -100»).
-4. Нажмите **«Проверить доступ»**. Приложение вызовет `getMe` и `getChat`.
-   - ✅ «Подключение успешно» — всё верно.
-   - ❌ `Unauthorized` — неверный токен (пробелы в начале/конце обрезаются,
-     но внутри быть не должно).
-   - ❌ `Bad Request: chat not found` — неверный chat id или бот не состоит в
-     группе.
-   - ❌ `403 not enough rights` — бот не администратор.
-5. Остальные настройки (кэш, звук ошибки) не обязательны — нажмите
-   **«Сохранить и вернуться»**.
-
-> Настройки и история лежат на устройстве. При переносе на другой телефон
-> токен придётся ввести заново — он намеренно исключён из резервного копирования
-> (см. «Известные ограничения»).
+**Requires Android 8.0 or higher.**
 
 ---
 
-## Как делиться ссылкой
+## ⚙️ Setup (one-time)
 
-Способ 1 — **«Поделиться»** (основной):
+The app needs a Telegram bot and a group to send files to.
 
-1. В TikTok или браузере нажмите «Поделиться».
-2. Выберите **Media Saver** в списке приложений.
-3. Подтвердите загрузку во всплывающей панели.
+### 1. Create a bot
 
-Способ 2 — **вставка ссылки вручную**:
+1. Open [@BotFather](https://t.me/BotFather) in Telegram.
+2. Send `/newbot`, pick a name and username.
+3. Copy the **token** (looks like `123456789:AAExxxxxx…`).
 
-1. Откройте **Media Saver**.
-2. Вставьте ссылку в поле ввода (например `https://vm.tiktok.com/...`).
-3. Нажмите кнопку загрузки.
+> [!CAUTION]
+> The token is your bot's password. Never share it. If leaked, revoke it via `/revoke` in @BotFather.
 
-Способ 3 — **открыть ссылку напрямую**: тап по ссылке `tiktok.com` в браузере
-можно направить в приложение через «Открыть с помощью» → Media Saver
-(обрабатывается как `VIEW`/`BROWSABLE`).
+### 2. Add the bot to a group
 
-Приложение само находит TikTok-ссылку в произвольном тексте, если текст
-содержит больше лишних символов, чем сама ссылка.
+1. Create or open a Telegram **group** (not a channel or direct chat).
+2. Add your bot as a member.
+3. Make it an **admin** with at least the **Post Messages** permission — otherwise uploads will fail with a `403` error.
 
----
+### 3. Get the group's Chat ID
 
-## Сборка и запуск
+The Chat ID always starts with `-100` (e.g., `-1001234567890`). Easiest way to find it:
 
-Требования:
+- **Share the group** to [@username_to_id_bot](https://t.me/username_to_id_bot) — open the bot, tap the attachment icon, choose a chat, select your group — it will instantly reply with the Chat ID.
 
-- **JDK 17+** (Gradle и Android Gradle Plugin 9.1.1 требуют 17; целевая
-  совместимость исходников — 11).
-- **Android SDK** с платформой **API 36** (Android 16), плюс Build Tools.
-  Путь к SDK указывается в `local.properties`:
-  ```properties
-  sdk.dir=C\:\\Users\\<user>\\AppData\\Local\\Android\\Sdk
-  ```
-- Интернет при первом запуске Gradle — для скачивания зависимостей.
+### 4. Enter the credentials in the app
 
-Команды:
-
-```bash
-# Debug-сборка APK → app/build/outputs/apk/debug/app-debug.apk
-./gradlew assembleDebug
-
-# Юнит-тесты (JVM + Robolectric), без устройства
-./gradlew testDebugUnitTest
-
-# Установить на подключённое устройство/эмулятор
-./gradlew installDebug
-```
-
-В Windows используйте `gradlew.bat assembleDebug` либо Git Bash / WSL для
-`./gradlew`.
-
-Релизная сборка (`assembleRelease`) подписывается только если заданные
-переменные окружения `KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_ALIAS`,
-`KEY_PASSWORD` существуют; иначе используется debug-подпись. Без keystore на
-машине сборка не падает.
+1. Open **Media Saver** → tap the ⚙️ gear icon.
+2. Under **Telegram API**, paste:
+   - **Bot Token** — from step 1.
+   - **Group ID** — from step 3 (starts with `-100`).
+3. Tap **Test Connection**.
+   - ✅ *Connected* — you're all set.
+   - ❌ `Unauthorized` — wrong token.
+   - ❌ `chat not found` — wrong Group ID or bot not in the group.
+   - ❌ `not enough rights` — bot is not an admin.
+4. Tap **Save**.
 
 ---
 
-## Структура проекта
+## 🚀 How to Use
 
-```
-media-saver/
-├── app/
-│   ├── build.gradle.kts            # конфигурация модуля, applicationId, зависимости
-│   └── src/
-│       ├── main/
-│       │   ├── AndroidManifest.xml # share-таргет, VIEW-фильтры на tiktok.com, FG-сервис dataSync
-│       │   ├── res/xml/
-│       │   │   ├── backup_rules.xml           # исключения из бэкапа
-│       │   │   └── data_extraction_rules.xml  # то же для Android 12+
-│       │   └── java/com/example/
-│       │       ├── MainActivity.kt      # точка входа (launcher)
-│       │       ├── ShareActivity.kt     # приём ACTION_SEND / ACTION_VIEW, прозрачный bottom sheet
-│       │       ├── MediaSaverApp.kt     # Application, создание каналов уведомлений
-│       │       ├── data/
-│       │       │   ├── SettingsStore.kt  # EncryptedSharedPreferences: токен, chat id, кэш, звук
-│       │       │   └── HistoryStore.kt   # Room: сущность, DAO, миграции, репозиторий
-│       │       ├── network/
-│       │       │   ├── TikWmClient.kt    # резолв ссылки через tikwm.com, retry x3, детект rate limit
-│       │       │   └── TelegramClient.kt # Bot API: getMe/getChat/sendMessage/sendVideo/sendMediaGroup, retry и flood control
-│       │       ├── domain/
-│       │       │   ├── LinkDetector.kt    # извлечение TikTok-ссылки из произвольного текста
-│       │       │   └── DownloadUseCase.kt # скачивание файла/превью с прогрессом, автоочистка кэша
-│       │       ├── worker/
-│       │       │   └── DownloadWorker.kt  # конвейер: resolve → download → upload → история → уведомление
-│       │       ├── util/
-│       │       │   ├── NotificationHelper.kt  # уведомления об успехе/ошибке
-│       │       │   ├── HapticFeedback.kt      # вибрация
-│       │       │   └── HtmlEscape.kt           # экранирование подписи под parse_mode=HTML
-│       │       └── ui/
-│       │           ├── MainViewModel.kt  # состояние экранов, запуск воркера, тест подключения
-│       │           ├── MainScreen.kt     # ввод ссылки, история загрузок, прогресс
-│       │           ├── SettingsScreen.kt # экран настроек
-│       │           └── theme/            # Material 3 цвета, типографика
-│       └── test/                        # юнит-тесты (JUnit + Robolectric)
-├── gradle/libs.versions.toml   # версии библиотек и плагинов (version catalog)
-└── build.gradle.kts            # корневой build-файл
-```
+| Method | Steps |
+|---|---|
+| **Share from TikTok** *(recommended)* | Tap Share in TikTok → select **Media Saver** → confirm |
+| **Paste a link** | Open Media Saver → paste a TikTok URL → tap the download button |
+| **Open link directly** | Tap a `tiktok.com` link → choose **Open with Media Saver** |
 
-### Как работает конвейер (`DownloadWorker`)
-
-1. Проверяет, что токен и chat id заданы (иначе — ошибка и уведомление).
-2. `TikWmClient` разрешает ссылку: получает `hdplay`/`play` для видео или
-   `images[]` для карусели.
-3. Скачивает превью (обложку) в кэш для показа в истории.
-4. **Видео:** скачивает файл с прогрессом. Если итоговый размер больше 50 МБ и
-   у API есть запасной вариант (`play` вместо `hdplay`) — удаляет файл и
-   скачивает заново в более низком качестве. Если файл всё ещё больше 50 МБ —
-   падает с явной ошибкой. Отправляет через `sendVideo`.
-5. **Карусель:** скачивает все изображения, режет их по 10 штук и отправляет
-   альбомами (`sendMediaGroup`), подпись идёт к первому сообщению альбома,
-   остальные альбомы — ответом на первое.
-6. Сохраняет запись в Room со статусом `done` и ссылкой вида
-   `https://t.me/c/<id>/<message_id>`, вибрирует, показывает уведомление.
-7. В обоих случаях (успех и ошибка) запускает автоочистку кэша по лимиту из
-   настроек. При ошибке статус становится `error`, текст ошибки пишется в
-   историю и в уведомление.
+The app automatically extracts a TikTok link from any shared text, even if it includes extra content.
 
 ---
 
-## Известные ограничения и решение проблем
+## ⚠️ Known Limitations
 
-### Лимит 50 МБ в Telegram Bot API
-
-Bot API принимает видео **не больше 50 МБ** — это жёсткое ограничение Telegram,
-а не настройка приложения. Как только файл превышает лимит:
-
-1. Приложение один раз повторяет скачивание в более низком качестве
-   (используется второй URL из ответа tikwm). Вы увидите статус
-   «Видео слишком большое, пробуем другое качество…».
-2. Если и этот файл больше 50 МБ, загрузка прерывается с явной ошибкой
-   «Файл слишком большой (> 50МБ). Telegram Bot API не поддерживает загрузку
-   таких файлов.» Она попадает и в историю, и в уведомление.
-
-Приложение **не режет** видео и не делит его на части — этого в нём нет.
-Обходной путь: в ссылке TikTok выбрать ролик покороче, или отправить файл
-в группу вручную через Telegram-клиент.
-
-Другие лимиты, на которые стоит обратить внимание:
-
-- карусели отправляются альбомами по 10 файлов (ограничение Bot API);
-- подпись к медиа — до 1024 символов; если заголовок длиннее, в подпись уходит
-  только ссылка, а остальной текст отправляется отдельным сообщением;
-- при ответе `429 Too Many Requests` клиент уважает `retry_after` (ожидание
-  ограничено 60 секундами) и повторяет запрос до 4 раз.
-
-### Зависимость от стороннего API tikwm.com
-
-Приложение не размещает и не кодирует видео само — оно полагается на
-`https://www.tikwm.com/api/`. Отсюда:
-
-- **Rate limit.** При частых запросах API отвечает сообщением с `limit` /
-  `frequent` / `request`; приложение распознаёт это и ждёт 2 секунды перед
-  повтором, всего до 3 попыток. При исчерпании попыток будет ошибка
-  «Не удалось получить данные после 3 попыток».
-- **Изменение формата.** Если tikwm.com изменит имена полей (`hdplay`, `play`,
-  `images`, `cover`) или вернёт другую структуру JSON, резолв сломается —
-  придётся править `TikWmClient`.
-- **Недоступность.** Если сервис лежит или заблокирован, загрузка невозможна
-  вовсе, какие бы настройки ни были выставлены.
-- **Политика сервиса.** Условия использования tikwm.com распространяются и на
-  вас: скачивание материалов, которые вам не принадлежат, может нарушать
-  авторские права. Ответственность — на пользователе.
-
-### Хранение токена
-
-- Токен бота лежит в **зашифрованных** `EncryptedSharedPreferences`
-  (`secure_settings.xml`): ключи шифруются AES256-SIV, значения — AES256-GCM,
-  мастер-ключ создаётся Android Keystore.
-- Файл `secure_settings.xml` и база истории **исключены** из облачного резервного
-  копирования и переноса на другое устройство — см. `res/xml/backup_rules.xml`
-  и `res/xml/data_extraction_rules.xml`. Поэтому при переустановке/смене
-  телефона токен и история не восстановятся, их нужно ввести/загрузить заново.
-- Токен попадает в APK только если вы введёте его в рантайме; в репозитории
-  его нет.
-
-### Частые ошибки и что делать
-
-| Симптом | Причина и решение |
-| --- | --- |
-| «Токен бота или Group ID не заполнены» | Не заполнены Настройки → Telegram API. |
-| `Unauthorized` | Неверный токен. Проверьте его у @BotFather, вставьте заново. |
-| `chat not found` | Неверный chat id или бот не добавлен в группу. |
-| `not enough rights` / 403 | Бот не администратор. Выдайте право публикации сообщений. |
-| `Forbidden: bot was blocked by the user` | Ваш личный аккаунт заблокировал бота в личке — для группы это не мешает; проверьте, что id указывает именно на группу. |
-| «Файл слишком большой (> 50МБ)» | Лимит Bot API, см. выше. |
-| Загрузка не начинается | Проверьте, что включён интернет, и что приложению разрешены уведомления (Android 13+). |
-| Загрузка прерывается при сворачивании | На очень старых прошивках может срабатывать агрессивный Doze. Не отключайте оптимизацию приложения. |
-| Видео «прыгает» в фоне | Ожидаемо: загрузка идёт в WorkManager и видна в уведомлении, а не в приложении. |
+| Issue | Details |
+|---|---|
+| **50 MB video limit** | Telegram Bot API caps videos at 50 MB. The app retries once at lower quality; if still over the limit, it fails with a clear error. Videos are not split or re-encoded. |
+| **Third-party API** | Media resolution depends on [tikwm.com](https://tikwm.com). If the service is down or rate-limited, downloads will fail. |
+| **Settings not backed up** | The bot token is stored encrypted and intentionally excluded from Android cloud backup and device transfers. You'll need to re-enter it on a new device. |
+| **Public posts only** | Only publicly accessible TikTok links are supported — no private accounts or login. |
 
 ---
 
-## Что не входит в репозиторий
+## 🔧 Troubleshooting
 
-Машинно-локальные файлы намеренно не коммитятся (см. `.gitignore`):
-
-- `local.properties` — путь к вашему Android SDK (`sdk.dir`), у каждой машины
-  свой;
-- keystore-файлы (`*.jks`, `*.keystore`) и любые файлы подписи. Путь к
-  keystore передаётся через переменные окружения `KEYSTORE_PATH`,
-  `STORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`; без них `assembleDebug`
-  работает сразу, а `assembleRelease` подписывается debug-ключом.
-
-Чистый клон собирается командой `./gradlew assembleDebug` без дополнительной
-подготовки, кроме установленного JDK и Android SDK.
-
----
-
-## English summary
-
-**Media Saver** is an Android app that resolves a TikTok link through the
-third-party **tikwm.com** API, downloads the video or the photo carousel, and
-uploads it into a Telegram group via a **Bot API** bot.
-
-**Setup:** create a bot with **@BotFather**, add it to the target group and grant
-it admin rights (**post messages** is mandatory), find the group's chat id
-(it starts with `-100`; read it from `web.telegram.org/k/#!<id>/<message_id>` or
-ask a bot-inspector), then paste the token and the chat id into
-**Settings → Telegram API** and press **«Проверить доступ»**.
-
-**Sharing:** use *Share* from TikTok or the browser, paste the link manually, or
-open a `tiktok.com` link directly.
-
-**Build:** `./gradlew assembleDebug`, `./gradlew testDebugUnitTest`. Requires
-JDK 17+ and Android SDK API 36 (`sdk.dir` in `local.properties`).
-
-**Stack:** Kotlin 2.2, Jetpack Compose + Material 3, OkHttp, WorkManager,
-Room, `EncryptedSharedPreferences`, Coroutines, Coil. `minSdk` 26,
-`targetSdk` 36.
-
-**Known constraints:** Telegram Bot API caps videos at **50 MB** — the app
-retries once at a lower quality and then fails with an explicit error; it does
-not split or re-encode. The app depends on **tikwm.com**, which may rate-limit
-(3 retries) or change its JSON format. The bot token is stored in an encrypted
-preferences store and is **excluded from Android cloud backup and device
-transfer** by design. `local.properties` and keystores are machine-local and
-git-ignored.
+| Symptom | Fix |
+|---|---|
+| "Bot token or Group ID not set" | Go to Settings → Telegram API and fill in both fields. |
+| `Unauthorized` | Wrong token — check it in @BotFather and re-paste. |
+| `chat not found` | Wrong Group ID or bot is not a member of the group. |
+| `not enough rights` / 403 | Grant the bot the **Post Messages** admin permission. |
+| "File too large (>50 MB)" | Telegram Bot API hard limit — see above. |
+| Download doesn't start | Check your internet connection and make sure notifications are allowed (Android 13+). |
