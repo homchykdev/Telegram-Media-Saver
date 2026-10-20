@@ -1,3 +1,41 @@
 <resources>
     <string name="app_name">Media Saver</string>
+    <!-- Label shown in the system share sheet. Must stay short: it is rendered as
+         a single line next to the app icon. -->
+    <string name="share_target_label">В Telegram</string>
+
+    <string name="share_sheet_title">Скачать медиа</string>
+    <string name="share_sheet_confirm">Скачать</string>
+    <string name="share_sheet_unsupported">Не удалось распознать ссылку TikTok в полученном тексте.</string>
+
+    <string name="notif_channel_progress">Загрузка медиа</string>
+    <string name="notif_channel_progress_desc">Показывает прогресс текущей загрузки</string>
+    <string name="notif_channel_success">Успешная загрузка</string>
+    <string name="notif_channel_success_desc">Уведомления об успешной отправке медиа</string>
+    <string name="notif_channel_error">Ошибка</string>
+    <string name="notif_channel_error_desc">Уведомления об ошибках скачивания и отправки</string>
+
+    <!-- Alert sounds -->
+    <string name="sound_builtin_warning">Космический бластер (предупреждение)</string>
+    <string name="sound_builtin_alarm">Сигнал тревоги</string>
+    <string name="sound_builtin_success">Приятный сигнал</string>
+    <string name="sound_none">Без звука</string>
+    <string name="sound_pick_own">Выбрать свой звук…</string>
+    <string name="sound_own_section">Мои звуки</string>
+    <string name="sound_own_empty">Свои звуки ещё не добавлены.</string>
+    <string name="sound_listen">Прослушать</string>
+    <string name="sound_delete">Удалить</string>
+    <string name="sound_in_use">Этот звук сейчас выбран. Сначала выберите другой.</string>
+    <string name="sound_import_failed">Не удалось добавить звук</string>
+    <string name="sound_selected">Выбран звук: %1$s</string>
+    <string name="sound_section_error">Звук при ошибке</string>
+    <string name="sound_section_success">Звук при успешной отправке</string>
+    <string name="sound_volume">Громкость</string>
+    <string name="sound_custom_badge">Свой</string>
+    <string name="sound_missing">Файл звука не найден — выберите звук заново</string>
+
+    <string name="notif_progress_title">Загрузка медиа…</string>
+
+    <string name="share_sheet_queued">Загрузка добавлена в очередь</string>
+    <string name="error_missing_credentials">Сначала укажите токен бота и Group ID в настройках</string>
 </resources>

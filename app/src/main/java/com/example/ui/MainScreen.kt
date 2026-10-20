@@ -29,9 +29,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.util.Log
 import com.example.data.HistoryEntry
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
@@ -49,78 +50,21 @@ fun MainScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val history by viewModel.historyEntries.collectAsState(initial = emptyList())
-    val sharedUrl by viewModel.sharedUrlFlow.collectAsState()
-    
-    var showShareBottomSheet by remember { mutableStateOf(false) }
 
-    LaunchedEffect(sharedUrl) {
-        if (sharedUrl.isNotEmpty()) {
-            urlInput = sharedUrl
-            showShareBottomSheet = true
-        }
-    }
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    if (showShareBottomSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = {
-                showShareBottomSheet = false
-                viewModel.clearSharedUrl()
-            },
-            sheetState = sheetState,
-            containerColor = Color.White
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "Скачать медиа",
-                    style = TextStyle(
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1E293B)
-                    )
-                )
-                Text(
-                    text = sharedUrl,
-                    style = TextStyle(
-                        fontSize = 14.sp,
-                        color = Color(0xFF64748B)
-                    ),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                
-                Button(
-                    onClick = {
-                        viewModel.sendMedia(sharedUrl)
-                        showShareBottomSheet = false
-                        viewModel.clearSharedUrl()
-                    },
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
-                ) {
-                    Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Скачать", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-    }
-
-    // Snackbar & status triggers
+    // Show the outcome before clearing it. Previously every error was reset to Idle
+    // in the same frame it arrived and nothing ever rendered it, so a failed upload
+    // produced no message on screen at all.
     LaunchedEffect(uiState) {
-        when (uiState) {
+        when (val state = uiState) {
             is MainViewModel.UiState.Success -> {
                 urlInput = "" // Clear field on success
+                snackbarHostState.showSnackbar(state.title)
                 viewModel.resetUiState()
             }
             is MainViewModel.UiState.Error -> {
+                snackbarHostState.showSnackbar(state.message)
                 viewModel.resetUiState()
             }
             else -> {}
@@ -128,7 +72,8 @@ fun MainScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFFF7F8FA) // Modern, soft off-white/light-gray background
+        containerColor = Color(0xFFF7F8FA), // Modern, soft off-white/light-gray background
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -366,6 +311,27 @@ fun MainScreen(
                     }
                 }
             } else {
+                // Hoisted out of `items`. The item-content lambda captured the
+                // ViewModel, which Compose infers unstable, so the compiler never
+                // memoised it and the LazyColumn rebuilt its whole item provider — and
+                // re-boxed a key for every row — four times a second while a download
+                // reported progress.
+                val onOpenLink: (String) -> Unit = remember(context) {
+                    { link ->
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
+                        } catch (e: Exception) {
+                            Log.w("MainScreen", "Не удалось открыть ссылку: ${e.message}")
+                        }
+                    }
+                }
+                val onDelete = remember(viewModel) {
+                    { entry: HistoryEntry -> viewModel.deleteHistoryEntry(entry) }
+                }
+                val onRetry = remember(viewModel) {
+                    { entry: HistoryEntry -> viewModel.retryDownload(entry) }
+                }
+
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier
@@ -375,16 +341,9 @@ fun MainScreen(
                     items(history, key = { it.id }) { entry ->
                         HistoryCard(
                             entry = entry,
-                            onOpenLink = { link ->
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link))
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    // Fallback
-                                }
-                            },
-                            onDelete = { viewModel.deleteHistoryEntry(entry) },
-                            onRetry = { viewModel.retryDownload(entry) }
+                            onOpenLink = onOpenLink,
+                            onDelete = onDelete,
+                            onRetry = onRetry
                         )
                     }
                 }
@@ -398,8 +357,8 @@ fun MainScreen(
 fun HistoryCard(
     entry: HistoryEntry,
     onOpenLink: (String) -> Unit,
-    onDelete: () -> Unit,
-    onRetry: () -> Unit
+    onDelete: (HistoryEntry) -> Unit,
+    onRetry: (HistoryEntry) -> Unit
 ) {
     var expandedMenu by remember { mutableStateOf(false) }
 
@@ -408,7 +367,7 @@ fun HistoryCard(
             .fillMaxWidth()
             .testTag("history_item_card_${entry.id}")
             .combinedClickable(
-                onClick = { entry.messageLink?.let { onOpenLink(it) } },
+                onClick = { entry.messageLink?.let(onOpenLink) },
                 onLongClick = { expandedMenu = true }
             ),
         shape = RoundedCornerShape(24.dp),
@@ -423,31 +382,29 @@ fun HistoryCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // 1. Beautiful Gradient Thumbnail Placeholder on the Left
-            val thumbFile = entry.thumbnailPath?.let { File(it) }
-            val showThumbnail = thumbFile != null && thumbFile.exists()
+            //
+            // Keyed on the path so the existence check — a blocking stat() — happens
+            // once per row rather than on every recomposition of every visible row.
+            val thumbFile = remember(entry.thumbnailPath) {
+                entry.thumbnailPath?.let { File(it) }?.takeIf { it.isFile }
+            }
 
             Box(
                 modifier = Modifier
                     .size(80.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .then(
-                        if (showThumbnail) {
+                        if (thumbFile != null) {
                             Modifier
                         } else {
                             Modifier.background(
-                                Brush.radialGradient(
-                                    colors = if (entry.type == "carousel") {
-                                        listOf(Color(0xFF818CF8), Color(0xFF6366F1)) // Beautiful Purple-Blue
-                                    } else {
-                                        listOf(Color(0xFFF472B6), Color(0xFFEC4899)) // Beautiful Pink-Red
-                                    }
-                                )
+                                if (entry.type == "carousel") CAROUSEL_GRADIENT else VIDEO_GRADIENT
                             )
                         }
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (showThumbnail) {
+                if (thumbFile != null) {
                     AsyncImage(
                         model = thumbFile,
                         contentDescription = "Thumbnail",
@@ -479,7 +436,7 @@ fun HistoryCard(
                             )
                         }
                     }
-                    if (!showThumbnail) {
+                    if (thumbFile == null) {
                         // Photo stack icon in the center if no thumbnail
                         Icon(
                             imageVector = Icons.Default.Collections,
@@ -548,7 +505,7 @@ fun HistoryCard(
 
                 // Friendly relative timestamp
                 Text(
-                    text = getRelativeTimeString(entry.timestamp),
+                    text = remember(entry.timestamp) { getRelativeTimeString(entry.timestamp) },
                     style = TextStyle(
                         fontSize = 12.sp,
                         color = Color(0xFF64748B)
@@ -650,7 +607,7 @@ fun HistoryCard(
                                 },
                                 onClick = {
                                     expandedMenu = false
-                                    onRetry()
+                                    onRetry(entry)
                                 }
                             )
                         }
@@ -665,7 +622,7 @@ fun HistoryCard(
                             },
                             onClick = {
                                 expandedMenu = false
-                                onDelete()
+                                onDelete(entry)
                             },
                             modifier = Modifier.testTag("delete_item_button_${entry.id}")
                         )
@@ -728,46 +685,61 @@ private fun getRelativeTimeString(timestamp: Long): String {
     if (diff < 0) return "Только что"
     val minutes = diff / (60 * 1000)
     if (minutes < 1) return "Только что"
-    if (minutes < 60) {
-        val lastDigit = minutes % 10
-        val lastTwoDigits = minutes % 100
-        val minutesStr = when {
-            lastTwoDigits in 11..19 -> "$minutes минут назад"
-            lastDigit == 1L -> "$minutes минуту назад"
-            lastDigit in 2..4 -> "$minutes минуты назад"
-            else -> "$minutes минут назад"
-        }
-        return minutesStr
-    }
+    if (minutes < 60) return "${russianPlural(minutes, "минуту", "минуты", "минут")} назад"
+
     val hours = minutes / 60
-    if (hours < 24) {
-        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val dateStr = sdf.format(Date(timestamp))
-        // Check if same day
-        val calNow = Calendar.getInstance()
-        val calTime = Calendar.getInstance()
-        calTime.timeInMillis = timestamp
-        return if (calNow.get(Calendar.DAY_OF_YEAR) == calTime.get(Calendar.DAY_OF_YEAR)) {
-            dateStr
-        } else {
-            "Вчера • $dateStr"
-        }
-    }
     val days = hours / 24
-    if (days == 1L) {
-        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
-        return "Вчера • ${sdf.format(Date(timestamp))}"
+    if (days >= 7) return DATE_FORMAT.get().format(Date(timestamp))
+
+    val time = TIME_FORMAT.get().format(Date(timestamp))
+    return when {
+        // YEAR has to be compared too: DAY_OF_YEAR alone makes 1 Jan 2024 look like
+        // "today" when the same date is viewed on 1 Jan of a later year.
+        isSameCalendarDay(now, timestamp) -> time
+        // 24-47 hours ago is the previous calendar day in all but a DST edge case.
+        days <= 1L -> "Вчера • $time"
+        else -> "${russianPlural(days, "день", "дня", "дней")} назад"
     }
-    if (days < 7) {
-        val lastDigit = days % 10
-        val daysStr = when {
-            days in 11..19 -> "$days дней назад"
-            lastDigit == 1L -> "$days день назад"
-            lastDigit in 2..4 -> "$days дня назад"
-            else -> "$days дней назад"
-        }
-        return daysStr
-    }
-    val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-    return sdf.format(Date(timestamp))
 }
+
+private fun isSameCalendarDay(a: Long, b: Long): Boolean {
+    val first = Calendar.getInstance().apply { timeInMillis = a }
+    val second = Calendar.getInstance().apply { timeInMillis = b }
+    return first.get(Calendar.YEAR) == second.get(Calendar.YEAR) &&
+        first.get(Calendar.DAY_OF_YEAR) == second.get(Calendar.DAY_OF_YEAR)
+}
+
+/** Russian requires three plural forms, keyed on the last one or two digits. */
+private fun russianPlural(count: Long, one: String, few: String, many: String): String {
+    val lastTwo = count % 100
+    val last = count % 10
+    return when {
+        lastTwo in 11..14 -> "$count $many"
+        last == 1L -> "$count $one"
+        last in 2..4 -> "$count $few"
+        else -> "$count $many"
+    }
+}
+
+/**
+ * `SimpleDateFormat` builds a `DecimalFormat` and a `Calendar` per construction, and
+ * it is not thread-safe — hence one instance per thread rather than a shared one.
+ */
+private val TIME_FORMAT = object : ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue() = SimpleDateFormat("HH:mm", Locale.getDefault())
+}
+
+private val DATE_FORMAT = object : ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue() = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+}
+
+/**
+ * Built once rather than per row per composition. Each `Brush.radialGradient` call
+ * allocates a colour list, a brush and — at draw time — a new shader object.
+ */
+private val CAROUSEL_GRADIENT = Brush.radialGradient(
+    colors = listOf(Color(0xFF818CF8), Color(0xFF6366F1)) // Beautiful Purple-Blue
+)
+private val VIDEO_GRADIENT = Brush.radialGradient(
+    colors = listOf(Color(0xFFF472B6), Color(0xFFEC4899)) // Beautiful Pink-Red
+)

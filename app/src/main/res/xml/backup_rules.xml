@@ -1,13 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The app stores the Telegram bot token in an EncryptedSharedPreferences file.
+  That file must never leave the device: the master key is Keystore-backed, so a
+  restored copy would be unreadable anyway, and shipping the ciphertext off-device
+  is pointless risk. Everything else (history DB, cache) is safe to back up.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="sharedpref" path="secure_settings.xml" />
+    <exclude domain="database" path="history_database" />
+    <exclude domain="database" path="history_database-wal" />
+    <exclude domain="database" path="history_database-shm" />
+    <exclude domain="external" path="." />
 </full-backup-content>

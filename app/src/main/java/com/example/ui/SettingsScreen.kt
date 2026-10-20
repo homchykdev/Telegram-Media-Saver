@@ -10,10 +10,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.util.AlertSound
+import com.example.util.CustomSounds
+
+private const val MIN_CACHE_LIMIT_MB = 50f
+private const val MAX_CACHE_LIMIT_MB = 1000f
+private const val MIN_EXPIRATION_DAYS = 1f
+private const val MAX_EXPIRATION_DAYS = 30f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -22,17 +30,22 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val store = viewModel.settingsStore
+    val context = androidx.compose.ui.platform.LocalContext.current
     var tokenInput by remember { mutableStateOf(store.getBotToken()) }
     var groupIdInput by remember { mutableStateOf(store.getGroupId()) }
     var showToken by remember { mutableStateOf(false) }
 
-    var cacheLimitMb by remember { mutableStateOf(store.getCacheLimitMb().toFloat()) }
-    var expirationDays by remember { mutableStateOf(store.getCacheExpirationDays().toFloat()) }
-    var errorSound by remember { mutableStateOf(store.getErrorSound()) }
-    var errorSoundVolume by remember { mutableStateOf(store.getErrorSoundVolume()) }
-
+    // Stored values are clamped on read as well, so a corrupted preference
+    // can never put the sliders into an invalid state.
+    var cacheLimitMb by remember {
+        mutableStateOf(store.getCacheLimitMb().toFloat().coerceIn(MIN_CACHE_LIMIT_MB, MAX_CACHE_LIMIT_MB))
+    }
+    var expirationDays by remember {
+        mutableStateOf(store.getCacheExpirationDays().toFloat().coerceIn(MIN_EXPIRATION_DAYS, MAX_EXPIRATION_DAYS))
+    }
     val testState by viewModel.testConnectionState.collectAsState()
     val cacheSize by viewModel.cacheSize.collectAsState()
+    val isTesting = testState is MainViewModel.TestState.Testing
 
     LaunchedEffect(Unit) {
         viewModel.updateCacheSize()
@@ -101,8 +114,10 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { viewModel.testBotConfiguration(tokenInput, groupIdInput) },
-                    enabled = testState !is MainViewModel.TestState.Testing,
+                    onClick = {
+                        if (!isTesting) viewModel.testBotConfiguration(tokenInput, groupIdInput)
+                    },
+                    enabled = !isTesting,
                     modifier = Modifier.testTag("test_conn_button")
                 ) {
                     Text("Проверить доступ")
@@ -179,8 +194,8 @@ fun SettingsScreen(
                 }
                 Slider(
                     value = cacheLimitMb,
-                    onValueChange = { cacheLimitMb = it },
-                    valueRange = 50f..1000f,
+                    onValueChange = { cacheLimitMb = it.coerceIn(MIN_CACHE_LIMIT_MB, MAX_CACHE_LIMIT_MB) },
+                    valueRange = MIN_CACHE_LIMIT_MB..MAX_CACHE_LIMIT_MB,
                     steps = 19, // 50MB intervals
                     modifier = Modifier.testTag("cache_limit_slider")
                 )
@@ -211,8 +226,8 @@ fun SettingsScreen(
                 }
                 Slider(
                     value = expirationDays,
-                    onValueChange = { expirationDays = it },
-                    valueRange = 1f..30f,
+                    onValueChange = { expirationDays = it.coerceIn(MIN_EXPIRATION_DAYS, MAX_EXPIRATION_DAYS) },
+                    valueRange = MIN_EXPIRATION_DAYS..MAX_EXPIRATION_DAYS,
                     steps = 29, // 1 day steps
                     modifier = Modifier.testTag("cache_expiration_slider")
                 )
@@ -225,85 +240,75 @@ fun SettingsScreen(
 
             HorizontalDivider()
 
-            Text(
-                text = "Звук уведомления об ошибке",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+            // --- Sound settings -------------------------------------------------
+            // Sounds are stored as a single serialised value (see AlertSound) so a
+            // bundled preset and a user-imported file are interchangeable.
+            var errorSound by remember {
+                mutableStateOf(AlertSound.parse(store.getErrorSound()))
+            }
+            var errorVolume by remember {
+                mutableStateOf(store.getErrorSoundVolume().coerceIn(0f, 1f))
+            }
+            var successSound by remember {
+                mutableStateOf(AlertSound.parse(store.getSuccessSound()))
+            }
+            var successVolume by remember {
+                mutableStateOf(store.getSuccessSoundVolume().coerceIn(0f, 1f))
+            }
+
+            SoundPickerSection(
+                title = stringResource(com.example.R.string.sound_section_error),
+                selected = errorSound,
+                volume = errorVolume,
+                testTagPrefix = "error_sound",
+                onSelect = { errorSound = it },
+                onVolumeChange = { errorVolume = it.coerceIn(0f, 1f) }
             )
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    RadioButton(
-                        selected = errorSound == "warning",
-                        onClick = { errorSound = "warning" },
-                        modifier = Modifier.testTag("sound_warning_radio")
-                    )
-                    Text(
-                        text = "Космический бластер (Предупреждение)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                }
+            HorizontalDivider()
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    RadioButton(
-                        selected = errorSound == "alarm",
-                        onClick = { errorSound = "alarm" },
-                        modifier = Modifier.testTag("sound_alarm_radio")
-                    )
-                    Text(
-                        text = "Сигнал тревоги (Аларм)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                }
-            }
-            
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Громкость звука ошибки",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "${(errorSoundVolume * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Slider(
-                    value = errorSoundVolume,
-                    onValueChange = { errorSoundVolume = it },
-                    valueRange = 0f..1f,
-                    modifier = Modifier.testTag("error_volume_slider")
-                )
-            }
+            SoundPickerSection(
+                title = stringResource(com.example.R.string.sound_section_success),
+                selected = successSound,
+                volume = successVolume,
+                testTagPrefix = "success_sound",
+                onSelect = { successSound = it },
+                onVolumeChange = { successVolume = it.coerceIn(0f, 1f) }
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
                 onClick = {
+                    if (isTesting) return@Button
+                    // Clamp again on save: a limit of 0/negative would make
+                    // auto-cleanup wipe the whole cache immediately.
                     store.setBotToken(tokenInput)
                     store.setGroupId(groupIdInput)
-                    store.setCacheLimitMb(cacheLimitMb.toInt())
-                    store.setCacheExpirationDays(expirationDays.toInt())
-                    store.setErrorSound(errorSound)
-                    store.setErrorSoundVolume(errorSoundVolume)
+                    store.setCacheLimitMb(
+                        cacheLimitMb.toInt().coerceIn(MIN_CACHE_LIMIT_MB.toInt(), MAX_CACHE_LIMIT_MB.toInt())
+                    )
+                    store.setCacheExpirationDays(
+                        expirationDays.toInt().coerceIn(MIN_EXPIRATION_DAYS.toInt(), MAX_EXPIRATION_DAYS.toInt())
+                    )
+                    store.setErrorSound(AlertSound.encode(errorSound))
+                    store.setErrorSoundVolume(errorVolume.coerceIn(0f, 1f))
+                    store.setSuccessSound(AlertSound.encode(successSound))
+                    store.setSuccessSoundVolume(successVolume.coerceIn(0f, 1f))
+                    // Drop imports that are no longer referenced by either sound.
+                    CustomSounds.pruneOrphans(
+                        context,
+                        store.storedSoundValues()
+                            .map(AlertSound::parse)
+                            .filterIsInstance<AlertSound.Custom>()
+                            .map { it.fileName }
+                            .toSet()
+                    )
                     viewModel.clearTestState()
                     viewModel.autoCleanupCache()
                     onBack()
                 },
+                enabled = !isTesting,
                 modifier = Modifier.fillMaxWidth().testTag("save_settings_button")
             ) {
                 Text("Сохранить и вернуться")

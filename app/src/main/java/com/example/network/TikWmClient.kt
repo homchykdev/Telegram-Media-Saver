@@ -1,8 +1,12 @@
 package com.example.network
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import android.net.Uri
 import java.io.IOException
 
 sealed class TikWmResult {
@@ -15,19 +19,36 @@ sealed class TikWmResult {
 class TikWmClient(private val client: OkHttpClient) {
 
     @Throws(IOException::class)
-    fun fetchMedia(url: String): TikWmResult {
+    suspend fun fetchMedia(url: String): TikWmResult {
         var attempts = 0
         var lastException: Exception? = null
-        val requestUrl = "https://www.tikwm.com/api/?url=${url}&hd=1"
+        // Built through Uri.Builder rather than by interpolation: LinkDetector
+        // deliberately keeps `&` and `#` in the matched link, so a shared
+        // `?sender_device=pc&...` was being split at the `&` and the tail was handed
+        // to TikWM as a bogus parameter, while everything after a `#` was dropped
+        // entirely.
+        val requestUrl = Uri.Builder()
+            .scheme("https")
+            .authority("www.tikwm.com")
+            .path("/api/")
+            .appendQueryParameter("url", url)
+            .appendQueryParameter("hd", "1")
+            .build()
         val request = Request.Builder()
-            .url(requestUrl)
+            .url(requestUrl.toString())
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             .build()
 
         while (attempts < 3) {
             attempts++
             try {
-                client.newCall(request).execute().use { response ->
+                awaitRateLimitWindow()
+                client.newCall(request).executeAwait().use { response ->
+                    // 4xx from this API means the link itself is unusable; retrying it
+                    // three times only adds load to a service that is already limited.
+                    if (response.code in 400..499) {
+                        throw PermanentTikWmException("Ошибка сервера TikWM: ${response.code}")
+                    }
                     if (!response.isSuccessful) throw IOException("Ошибка сервера TikWM: ${response.code}")
                     
                     val bodyString = response.body?.string() ?: throw IOException("Пустой ответ от TikWM API")
@@ -62,26 +83,73 @@ class TikWmClient(private val client: OkHttpClient) {
                     }
 
                     // Otherwise, it's a single video
-                    val hdplay = data.optString("hdplay", "")
-                    val play = data.optString("play", "")
-                    val videoUrl = if (hdplay.isNotEmpty()) hdplay else play
-                    val fallbackVideoUrl = if (hdplay.isNotEmpty() && play.isNotEmpty() && hdplay != play) play else null
-                    
+                    val hdplay = usableUrl(data, "hdplay")
+                    val play = usableUrl(data, "play")
+                    val videoUrl = hdplay.ifEmpty { play }
+                    if (videoUrl.isEmpty()) {
+                        throw IOException("TikWM не вернул ссылку на видео для этого ролика")
+                    }
+                    val fallbackVideoUrl = if (hdplay.isNotEmpty() && play.isNotEmpty() && hdplay != videoUrl) play else null
+
                     return TikWmResult.Video(videoUrl, fallbackVideoUrl, title, if (coverUrl.isEmpty()) null else coverUrl)
                 }
+            } catch (e: PermanentTikWmException) {
+                throw IOException(e.message ?: "Ошибка TikWM")
             } catch (e: IOException) {
                 lastException = e
                 // If it's a fatal error not related to rate limit or connection, just throw
                 if (e.message?.startsWith("TikWM ошибка:") == true) {
                     throw e
                 }
-                // Sleep before retry (longer wait for rate limits)
+                // Sleep before retry (longer wait for rate limits). Suspending
+                // rather than Thread.sleep keeps the backoff cancellable, so a
+                // replaced download stops waiting instead of burning through it.
                 if (attempts < 3) {
                     val waitTime = if (e.message?.startsWith("RateLimit:") == true) 2000L else 1000L
-                    Thread.sleep(waitTime)
+                    delay(waitTime)
                 }
             }
         }
         throw IOException("Не удалось получить данные после 3 попыток: ${lastException?.message}")
+    }
+
+    /**
+     * Serialises access to this service's global quota.
+     *
+     * tikwm allows one request per second per IP. The per-worker retry loop was not
+     * enough on its own: two downloads started together each burned all three
+     * attempts against the shared budget, and every attempt turned into another
+     * rate-limit error — which is exactly the burst of "Free Api Limit" lines the
+     * production history showed. A mutex plus a minimum gap between calls keeps the
+     * app inside the budget no matter how many workers are running.
+     */
+    private suspend fun awaitRateLimitWindow() {
+        rateLimitMutex.withLock {
+            val now = System.currentTimeMillis()
+            val waitFor = lastRequestAt + MIN_REQUEST_GAP_MS - now
+            if (waitFor > 0) delay(waitFor)
+            lastRequestAt = System.currentTimeMillis()
+        }
+    }
+
+    private class PermanentTikWmException(message: String) : IOException(message)
+
+    /**
+     * This API returns the literal string `"null"` for a field it has no value for,
+     * and `Request.Builder().url("null")` then throws IllegalArgumentException rather
+     * than IOException — which would escape the retry loop and surface to the user as
+     * an incomprehensible message about URL schemes.
+     */
+    private fun usableUrl(data: JSONObject, key: String): String {
+        val value = data.optString(key, "").trim()
+        return if (value.isEmpty() || value == "null") "" else value
+    }
+
+    private companion object {
+        val rateLimitMutex = Mutex()
+        const val MIN_REQUEST_GAP_MS = 1_200L
+
+        @Volatile
+        var lastRequestAt = 0L
     }
 }

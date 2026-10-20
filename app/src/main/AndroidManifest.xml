@@ -7,7 +7,17 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      Required since Android 9 / mandatory since Android 14 for foreground services.
+      DownloadWorker promotes itself to a foreground service while it downloads and
+      uploads a video; without these the OS kills the job and the transfer dies with
+      "Job cancelled".
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <application
+        android:name=".MediaSaverApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -15,33 +25,74 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MyApplication">
+        android:theme="@style/Theme.MediaSaver">
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTask"
-            android:theme="@style/Theme.MyApplication">
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.MediaSaver">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- Share Target activity alias -->
-        <activity-alias
-            android:name=".ShareActivityAlias"
-            android:targetActivity=".MainActivity"
-            android:label="В Telegram"
-            android:exported="true">
+        <!--
+          Share target.
+
+          This is a separate translucent activity rather than an alias onto MainActivity
+          so that the bottom sheet is drawn over the app the user shared from, and the
+          user never loses their place in TikTok / the browser.
+
+          taskAffinity gives it its own task so dismissing the sheet returns to the
+          source app instead of revealing a blank Media Saver task.
+
+          singleTask, not singleInstance: sharing a second link while this activity is
+          still alive delivers a new intent to the existing instance via onNewIntent
+          (which ShareActivity handles), whereas the sheet would otherwise keep showing
+          and submitting the first link. singleInstance is also deprecated as of API 34.
+        -->
+        <activity
+            android:name=".ShareActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}.share"
+            android:theme="@style/Theme.MediaSaver.Translucent"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-        </activity-alias>
+            <!-- Handles "open with" when the user taps a tiktok.com link directly. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="tiktok.com" />
+                <data android:host="www.tiktok.com" />
+                <data android:host="vm.tiktok.com" />
+                <data android:host="vt.tiktok.com" />
+                <data android:host="m.tiktok.com" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          WorkManager's foreground service. On Android 14+ (API 34+) foreground
+          services must declare a type, otherwise startForeground() throws and the
+          worker is stopped immediately. The node is only used so the merge does not
+          strip the attribute added by the WorkManager library manifest.
+        -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 
 </manifest>

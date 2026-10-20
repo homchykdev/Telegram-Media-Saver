@@ -1,5 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar" />
+    <!--
+      Base application theme. The app is 100% Jetpack Compose, so this only needs to
+      provide a sane window setup for the Activity before Compose takes over.
+    -->
+    <style name="Theme.MediaSaver" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+
+    <!--
+      Theme used by ShareActivity — the share-sheet overlay.
+
+      The goal is for the bottom-sheet card to appear *on top of* the app the user
+      shared from (TikTok, browser, …) while the source app remains fully visible
+      behind a semi-transparent scrim that Compose renders.
+
+      How it works:
+        • windowIsTranslucent=true  → Android keeps the previous task's surface
+                                      alive and visible behind this activity's window.
+        • windowBackground=transparent + colorBackgroundCacheHint=@null → no opaque
+                                      flash while the activity is starting.
+        • windowIsFloating=false    → the activity occupies the full screen; this is
+                                      required so Compose can anchor the card at the
+                                      bottom and handle insets correctly.
+        • windowAnimationStyle=@null → no slide-in transition; the sheet simply
+                                      appears in place.
+        • windowOptOutEdgeToEdgeEnforcement=true (API 35+) → avoids the system
+                                      forcibly adding extra insets that would shift
+                                      the card position on Android 15+.
+    -->
+    <style name="Theme.MediaSaver.Translucent" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+
 </resources>
