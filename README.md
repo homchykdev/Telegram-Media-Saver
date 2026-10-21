@@ -8,7 +8,7 @@
 
 [English](README.md) &nbsp;|&nbsp; [Русский](README-ru.md)
 
-[![GitHub Releases](https://img.shields.io/badge/Download-APK-blue?style=for-the-badge&logo=android&logoColor=white)](https://github.com/YOUR_USERNAME/YOUR_REPO/releases/latest)
+[![GitHub Releases](https://img.shields.io/badge/Download-APK-blue?style=for-the-badge&logo=android&logoColor=white)](https://github.com/homchykdev/Telegram-Media-Saver/releases/latest)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-brightgreen?style=for-the-badge&logo=android&logoColor=white)
 ![Version](https://img.shields.io/badge/version-1.1.0-blue?style=for-the-badge)
 
