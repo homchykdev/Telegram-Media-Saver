@@ -35,6 +35,7 @@ import android.util.Log
 import com.example.data.HistoryEntry
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
+import kotlinx.coroutines.delay
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -50,6 +51,16 @@ fun MainScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val history by viewModel.historyEntries.collectAsState(initial = emptyList())
+
+    // "N minutes ago" must age on its own: without a tick the label is computed once
+    // per recomposition and only changes when the list data itself changes.
+    var nowTick by remember { mutableStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            nowTick = System.currentTimeMillis()
+        }
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -334,6 +345,7 @@ fun MainScreen(
                     items(history, key = { it.id }) { entry ->
                         HistoryCard(
                             entry = entry,
+                            nowTick = nowTick,
                             onOpenLink = onOpenLink,
                             onDelete = onDelete,
                             onRetry = onRetry
@@ -349,6 +361,7 @@ fun MainScreen(
 @Composable
 fun HistoryCard(
     entry: HistoryEntry,
+    nowTick: Long,
     onOpenLink: (String) -> Unit,
     onDelete: (HistoryEntry) -> Unit,
     onRetry: (HistoryEntry) -> Unit
@@ -491,7 +504,7 @@ fun HistoryCard(
 
                 // Friendly relative timestamp
                 Text(
-                    text = remember(entry.timestamp, s) { getRelativeTimeString(entry.timestamp, s) },
+                    text = remember(entry.timestamp, nowTick, s) { getRelativeTimeString(entry.timestamp, s) },
                     style = TextStyle(
                         fontSize = 12.sp,
                         color = Color(0xFF64748B)

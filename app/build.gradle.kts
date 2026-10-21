@@ -38,6 +38,12 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
+      // R8 shrinks and obfuscates the release APK; shrinkResources strips unused
+      // assets. Room, OkHttp and the rest all ship their own consumer rules, and
+      // no runtime reflection is used, so no project-specific keep rules were
+      // needed so far.
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       if (!System.getenv("KEYSTORE_PATH").isNullOrBlank()) {
         signingConfig = signingConfigs.getByName("release")

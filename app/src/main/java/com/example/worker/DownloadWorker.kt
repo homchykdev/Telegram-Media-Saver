@@ -26,13 +26,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
 import java.io.IOException
+import java.util.Collections
 
 private const val TAG = "DownloadWorker"
 
@@ -41,6 +46,13 @@ private const val MAX_TELEGRAM_BYTES = 50L * 1024 * 1024
 private const val TELEGRAM_CAPTION_LIMIT = 1024
 private const val TELEGRAM_TEXT_LIMIT = 4096
 private const val ALBUM_SIZE = 10
+/**
+ * Carousel images come from the TikTok CDN, not from the rate-limited tikwm API
+ * (its global quota only gates the /api/ metadata request), so a small amount of
+ * parallelism is safe. The results are reassembled in launch order, which is the
+ * order TikTok lists the images in.
+ */
+private const val PARALLEL_IMAGE_DOWNLOADS = 4
 
 class DownloadWorker(
     context: Context,
@@ -72,11 +84,19 @@ class DownloadWorker(
         val tikWmClient = TikWmClient(httpClient)
         val downloader = DownloadUseCase(applicationContext, httpClient)
         val telegram = TelegramClient(httpClient)
+        // Files this run downloaded. Each one owns a cache claim that must be
+        // released here in `finally` — and *only* the ones this run took: releasing
+        // every path in the process would drop claims held by another worker that
+        // is downloading at the same time. Thread-safe because carousel files are
+        // downloaded on parallel coroutines.
+        val claimedFiles = Collections.synchronizedList(mutableListOf<File>())
         val scope = CoroutineScope(coroutineContext)
-        val reporter = ProgressReporter(scope) { progress, status ->
+        val reporter = ProgressReporter(scope) { progress, status, publishForeground ->
             setProgress(workDataOf(KEY_PROGRESS to progress, KEY_STATUS to status))
-            runCatching {
-                setForeground(createForegroundInfo(entryId, status, progress))
+            if (publishForeground) {
+                runCatching {
+                    setForeground(createForegroundInfo(entryId, status, progress))
+                }
             }
         }
 
@@ -105,7 +125,7 @@ class DownloadWorker(
 
             val outcome = when (media) {
                 is TikWmResult.Video -> {
-                    val file = downloadVideo(downloader, reporter, media)
+                    val file = downloadVideo(downloader, reporter, media, claimedFiles)
                     reporter.report(0.97f, applicationContext.getString(R.string.worker_sending_video), force = true)
                     currentCoroutineContext().ensureActive()
                     val link = telegram.sendVideo(token, groupId, file, caption)
@@ -119,7 +139,7 @@ class DownloadWorker(
                 }
 
                 is TikWmResult.Carousel -> {
-                    val files = downloadCarousel(downloader, reporter, media)
+                    val files = downloadCarousel(downloader, reporter, media, claimedFiles)
                     reporter.report(0.97f, applicationContext.getString(R.string.worker_sending_carousel), force = true)
                     var firstMessageId: Long? = null
                     files.chunked(ALBUM_SIZE).forEachIndexed { index, chunk ->
@@ -179,7 +199,7 @@ class DownloadWorker(
             fail(repository, entryId, humanMessage(e))
             Result.failure()
         } finally {
-            runCatching { downloader.releaseAll() }
+            claimedFiles.forEach { file -> runCatching { downloader.releaseDownloaded(file) } }
         }
     }
 
@@ -194,22 +214,24 @@ class DownloadWorker(
     private suspend fun downloadVideo(
         downloader: DownloadUseCase,
         reporter: ProgressReporter,
-        media: TikWmResult.Video
+        media: TikWmResult.Video,
+        claimedFiles: MutableList<File>
     ): File {
         var file = downloader.downloadFile(
             media.videoUrl,
             "video.mp4",
             reporter.forItem(0, 1, applicationContext.getString(R.string.worker_downloading_video))
-        )
+        ).also { claimedFiles.add(it) }
 
         if (file.length() > MAX_TELEGRAM_BYTES && media.fallbackVideoUrl != null) {
             reporter.report(0f, applicationContext.getString(R.string.worker_video_too_large), force = true)
-            file.delete()
+            val oversized = file
             file = downloader.downloadFile(
                 media.fallbackVideoUrl,
                 "video_fallback.mp4",
                 reporter.forItem(0, 1, applicationContext.getString(R.string.worker_downloading_video_fallback))
-            )
+            ).also { claimedFiles.add(it) }
+            oversized.delete()
         }
 
         if (file.length() > MAX_TELEGRAM_BYTES) {
@@ -220,18 +242,38 @@ class DownloadWorker(
         return file
     }
 
+    /**
+     * Downloads carousel images with a bounded amount of parallelism.
+     *
+     * `awaitAll` reassembles the results in launch order, which is the order TikTok
+     * lists the images in, so the album arrives in the user's Telegram group in the
+     * sequence the post shows them — even though the individual transfers overlap.
+     * Each file is registered in [claimedFiles] the moment it is produced, because
+     * one failing image cancels its siblings and the `finally` release must see
+     * every claim this run took.
+     */
     private suspend fun downloadCarousel(
         downloader: DownloadUseCase,
         reporter: ProgressReporter,
-        media: TikWmResult.Carousel
+        media: TikWmResult.Carousel,
+        claimedFiles: MutableList<File>
     ): List<File> {
         val total = media.imageUrls.size
-        return media.imageUrls.mapIndexed { index, imageUrl ->
-            downloader.downloadFile(
-                imageUrl,
-                "img_$index.jpg",
-                reporter.forItem(index, total, applicationContext.getString(R.string.worker_downloading_photo, index + 1, total))
-            )
+        return coroutineScope {
+            val permits = Semaphore(PARALLEL_IMAGE_DOWNLOADS)
+            media.imageUrls.mapIndexed { index, imageUrl ->
+                async {
+                    val file = permits.withPermit {
+                        downloader.downloadFile(
+                            imageUrl,
+                            "img_$index.jpg",
+                            reporter.forItem(index, total, applicationContext.getString(R.string.worker_downloading_photo, index + 1, total))
+                        )
+                    }
+                    claimedFiles.add(file)
+                    file
+                }
+            }.awaitAll()
         }
     }
 
@@ -273,25 +315,50 @@ class DownloadWorker(
 
     private class ProgressReporter(
         private val scope: CoroutineScope,
-        private val emit: suspend (Float, String) -> Unit
+        private val emit: suspend (Float, String, Boolean) -> Unit
     ) {
         @Volatile
         private var lastEmitAt = 0L
 
+        @Volatile
+        private var lastForegroundAt = 0L
+
+        private val itemProgress = java.util.concurrent.ConcurrentHashMap<Int, Float>()
+
+        /**
+         * [emit] carries a second throttle of its own: re-promoting the foreground
+         * service is a binder round trip plus a notification re-post, so it does not
+         * run at the same cadence as the cheap [setProgress]. Milestones ([force])
+         * always publish foreground.
+         */
         suspend fun report(progress: Float, status: String, force: Boolean = false) {
             val now = System.currentTimeMillis()
             if (!force && now - lastEmitAt < PROGRESS_INTERVAL_MS) return
             lastEmitAt = now
-            emit(progress.coerceIn(0f, 1f), status)
+            val publishForeground = force || now - lastForegroundAt >= FOREGROUND_INTERVAL_MS
+            if (publishForeground) lastForegroundAt = now
+            emit(progress.coerceIn(0f, 1f), status, publishForeground)
         }
 
+        /**
+         * Progress across items that download in parallel must not run backwards:
+         * the listener of a freshly started image would otherwise overwrite the
+         * percentage of one that is nearly finished. The reported value is the
+         * maximum over all items of `(index + itemProgress) / total`, which is
+         * monotonic even when the listeners fire out of order.
+         */
         fun forItem(index: Int, total: Int, status: String) = object : DownloadUseCase.ProgressListener {
             override fun onProgress(percentage: Float) {
+                itemProgress[index] = percentage
                 val now = System.currentTimeMillis()
                 if (now - lastEmitAt < PROGRESS_INTERVAL_MS) return
-                scope.launch { report((index + percentage) / total.coerceAtLeast(1), status) }
+                scope.launch { report(aggregate(total), status) }
             }
         }
+
+        private fun aggregate(total: Int): Float =
+            itemProgress.entries
+                .maxOf { (itemIndex, itemPct) -> (itemIndex + itemPct) / total.coerceAtLeast(1) }
     }
 
     companion object {
@@ -301,6 +368,7 @@ class DownloadWorker(
         const val KEY_STATUS = "status"
         const val TAG_DOWNLOAD = "download_media"
         private const val PROGRESS_INTERVAL_MS = 250L
+        private const val FOREGROUND_INTERVAL_MS = 1_000L
         private const val ENTRY_TAG_PREFIX = "entry_"
 
         fun uniqueWorkName(entryId: Long) = "download_entry_$entryId"

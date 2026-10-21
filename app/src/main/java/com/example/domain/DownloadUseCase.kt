@@ -87,15 +87,22 @@ class DownloadUseCase(
      * Frees the claim taken by [downloadFile] once the media has been uploaded or
      * abandoned. The worker calls this in both cases; without it a claim would
      * leak and permanently protect that file from the cache sweeper.
+     *
+     * Only the paths this one download claimed (the file and its unique cache
+     * directory) are touched. Two workers can run concurrently, so a blanket
+     * "release everything" from one worker's `finally` would drop another worker's
+     * still-active claims and let the cache sweeper unlink a file being downloaded
+     * right now.
      */
     fun releaseDownloaded(file: File) {
         releaseInFlight(file, file.parentFile ?: return)
     }
 
     /**
-     * Drops every claim held in this process. The worker calls it from its `finally`,
-     * so a claim can never outlive the transfer that took it and leave the sweeper
-     * permanently blind to a path.
+     * Drops every claim held in this process. Tests and teardown-only: production
+     * download paths must release their own files via [releaseDownloaded], because
+     * claims taken by one concurrent transfer have no business being cleared by
+     * another.
      */
     fun releaseAll() {
         inFlight.clear()
@@ -218,6 +225,17 @@ class DownloadUseCase(
     }.onFailure { Log.w(TAG, "Не удалось сохранить превью: ${it.message}") }.getOrNull()
 
     // ------------------------------------------------------------------ cache
+
+    /**
+     * Deletes a history entry's thumbnail. Thumbnails are unique per save, so the
+     * path is not shared with other entries — the `isInFlight` guard only protects
+     * against the unlikely case of a transfer still writing to it.
+     */
+    fun deleteThumbnail(path: String) {
+        val file = File(path)
+        if (!file.isFile || isInFlight(file)) return
+        file.delete()
+    }
 
     private fun cacheFolder(): File = File(context.cacheDir, CACHE_DIR_NAME)
 

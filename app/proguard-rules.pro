@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Compile-time-only annotations referenced by Tink (EncryptedSharedPreferences) and
+# some Guava internals that never exist at runtime. Safe to ignore.
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotations.**
+-dontwarn org.checkerframework.**

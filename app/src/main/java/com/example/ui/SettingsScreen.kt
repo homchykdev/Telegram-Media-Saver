@@ -113,6 +113,10 @@ fun SettingsScreen(
                     selected = selectedLang == Lang.EN,
                     modifier = Modifier.weight(1f),
                     onClick = {
+                        // Apply the locale synchronously so resource-based strings
+                        // (sound pickers) resolve in the new language during the very
+                        // recomposition triggered by the state update below.
+                        LocaleHelper.applyLocale(context, "en")
                         selectedLang = Lang.EN
                         store.setLanguage("en")
                     }
@@ -123,6 +127,7 @@ fun SettingsScreen(
                     selected = selectedLang == Lang.RU,
                     modifier = Modifier.weight(1f),
                     onClick = {
+                        LocaleHelper.applyLocale(context, "ru")
                         selectedLang = Lang.RU
                         store.setLanguage("ru")
                     }
@@ -317,9 +322,11 @@ fun SettingsScreen(
 
             val errorSectionTitle = if (selectedLang == Lang.EN) "Error sound" else "Звук при ошибке"
             val successSectionTitle = if (selectedLang == Lang.EN) "Success sound" else "Звук при успешной отправке"
+            val soundLangCode = if (selectedLang == Lang.EN) "en" else "ru"
 
             SoundPickerSection(
                 title = errorSectionTitle,
+                langCode = soundLangCode,
                 selected = errorSound,
                 volume = errorVolume,
                 testTagPrefix = "error_sound",
@@ -331,6 +338,7 @@ fun SettingsScreen(
 
             SoundPickerSection(
                 title = successSectionTitle,
+                langCode = soundLangCode,
                 selected = successSound,
                 volume = successVolume,
                 testTagPrefix = "success_sound",

@@ -24,9 +24,12 @@ import com.example.worker.DownloadWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -51,8 +54,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _cacheSize = MutableStateFlow(0L)
     val cacheSize: StateFlow<Long> = _cacheSize.asStateFlow()
 
-    private var observeJob: Job? = null
-    private var activeEntryId: Long = -1L
+    /** Entries whose download is enqueued or running, whatever the focused bar shows. */
+    private val activeEntryIds = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<Long, Boolean>()
+    )
+    /** Work id the main progress bar is focused on: the one started last. */
+    @Volatile
+    private var focusedWorkId: java.util.UUID? = null
+
+    /** One WorkManager observer per download; entries clean up on terminal states. */
+    private val observers = mutableMapOf<java.util.UUID, Job>()
 
     private val _submitting = MutableStateFlow(false)
     val submitting: StateFlow<Boolean> = _submitting.asStateFlow()
@@ -113,7 +124,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun startDownload(entryId: Long, url: String) {
         repository.markRunning(entryId)
-        activeEntryId = entryId
+        activeEntryIds.add(entryId)
 
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
             .setInputData(
@@ -127,45 +138,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .build()
 
         workManager.enqueueUniqueWork(DownloadWorker.uniqueWorkName(entryId), ExistingWorkPolicy.REPLACE, request)
-        observe(request.id)
+        observe(request.id, entryId)
     }
 
-    private fun observe(workId: java.util.UUID) {
-        observeJob?.cancel()
-        observeJob = viewModelScope.launch(Dispatchers.Main) {
-            workManager.getWorkInfoByIdFlow(workId).collect { info ->
-                if (info == null) return@collect
-                when (info.state) {
-                    WorkInfo.State.RUNNING -> _uiState.value = UiState.Processing(
-                        progress = info.progress.getFloat(DownloadWorker.KEY_PROGRESS, 0f),
-                        statusText = info.progress.getString(DownloadWorker.KEY_STATUS)
-                            ?: getApplication<Application>().getString(R.string.status_processing)
-                    )
+    private fun observe(workId: java.util.UUID, entryId: Long) {
+        observers.remove(workId)?.cancel()
+        focusedWorkId = workId
+        val job = viewModelScope.launch(Dispatchers.Main) {
+            workManager.getWorkInfoByIdFlow(workId)
+                .onEach { info ->
+                    when {
+                        info == null -> Unit
+                        info.state == WorkInfo.State.RUNNING -> {
+                            // Only the focused download writes the shared bar; a
+                            // second, still-running job must not pull the percentage
+                            // backwards while the user watches another one.
+                            if (focusedWorkId == workId) {
+                                _uiState.value = UiState.Processing(
+                                    progress = info.progress.getFloat(DownloadWorker.KEY_PROGRESS, 0f),
+                                    statusText = info.progress.getString(DownloadWorker.KEY_STATUS)
+                                        ?: getApplication<Application>().getString(R.string.status_processing)
+                                )
+                            }
+                        }
 
-                    WorkInfo.State.SUCCEEDED -> {
-                        _submitting.value = false
-                        _uiState.value = UiState.Success(getApplication<Application>().getString(R.string.msg_media_sent))
-                        refreshCacheSize()
+                        info.state == WorkInfo.State.SUCCEEDED -> {
+                            if (focusedWorkId == workId) {
+                                _submitting.value = false
+                                _uiState.value = UiState.Success(getApplication<Application>().getString(R.string.msg_media_sent))
+                                refreshCacheSize()
+                            }
+                        }
+
+                        info.state == WorkInfo.State.FAILED -> {
+                            if (focusedWorkId == workId) {
+                                _submitting.value = false
+                                _uiState.value = UiState.Error(readErrorMessage(entryId))
+                            }
+                        }
+
+                        info.state == WorkInfo.State.CANCELLED -> {
+                            if (focusedWorkId == workId) {
+                                _submitting.value = false
+                                _uiState.value = UiState.Idle
+                            }
+                        }
+
+                        else -> Unit
                     }
-
-                    WorkInfo.State.FAILED -> {
-                        _submitting.value = false
-                        _uiState.value = UiState.Error(readErrorMessage())
-                    }
-
-                    WorkInfo.State.CANCELLED -> {
-                        _submitting.value = false
-                        _uiState.value = UiState.Idle
-                    }
-
-                    else -> Unit
                 }
-            }
+                // Completes right after the first terminal state was handled, so a
+                // finished download does not keep a collector subscribed forever.
+                // Null emissions (row not yet readable) never finish the flow.
+                .takeWhile { it?.state?.isFinished != true }
+                .collect()
         }
+        job.invokeOnCompletion {
+            observers.remove(workId)
+            activeEntryIds.remove(entryId)
+        }
+        observers[workId] = job
     }
 
-    private suspend fun readErrorMessage(): String {
-        val entry = repository.get(activeEntryId) ?: return getApplication<Application>().getString(R.string.error_download_or_send)
+    private suspend fun readErrorMessage(entryId: Long): String {
+        val entry = repository.get(entryId) ?: return getApplication<Application>().getString(R.string.error_download_or_send)
         return entry.errorMessage ?: getApplication<Application>().getString(R.string.error_download_or_send)
     }
 
@@ -184,11 +220,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         workManager.cancelUniqueWork(DownloadWorker.uniqueWorkName(entry.id))
         viewModelScope.launch(Dispatchers.IO) {
             repository.delete(entry)
+            // The row is gone; its preview otherwise stays in the cache until the
+            // expiration timer runs out (up to 30 days of dead bytes).
+            entry.thumbnailPath?.let { downloader.deleteThumbnail(it) }
             refreshCacheSize()
         }
     }
 
-    fun isDownloading(entryId: Long): Boolean = activeEntryId == entryId && _uiState.value is UiState.Processing
+    /**
+     * True while a download for [entryId] is enqueued or running, even if the main
+     * progress bar is focused on a different entry.
+     */
+    fun isDownloading(entryId: Long): Boolean = activeEntryIds.contains(entryId)
 
     // ---------------------------------------------------------------- settings
 
@@ -248,11 +291,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetUiState() {
         _uiState.value = UiState.Idle
-    }
-
-    override fun onCleared() {
-        observeJob?.cancel()
-        super.onCleared()
     }
 
     @Volatile

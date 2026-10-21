@@ -19,6 +19,13 @@ import java.util.concurrent.ConcurrentHashMap
  *  - **Re-decrypting values.** `getString` decrypts with AES-SIV/GCM on *every* call.
  *    Settings are read during composition and on every Send tap, so the values are
  *    decrypted once and served from memory afterwards; every write updates that copy.
+ *
+ * The remaining cost — creating the store the first time — is moved off the UI
+ * thread by [warmUp], which [com.example.MediaSaverApp] calls on a background thread
+ * during process start. Only the bot token and the group id are kept here; the rest
+ * of the settings were language, cache limits and sounds — nothing secret — and they
+ * moved to a plain prefs file so Activity creation and composition never have to
+ * wait on a Keystore round trip to know which locale to apply.
  */
 private object SecureSettings {
 
@@ -40,17 +47,18 @@ private object SecureSettings {
             ).also { store = it }
         }
 
+    /**
+     * Opens the store on the caller's thread. Called once per process from a
+     * background thread in [com.example.MediaSaverApp.onCreate], so subsequent
+     * accesses — including the main thread's — hit the finished object.
+     */
+    fun warmUp(context: Context) {
+        prefs(context)
+    }
+
     fun getString(context: Context, key: String, default: String): String =
         (decrypted[key] as? String)
             ?: prefs(context).getString(key, default).orEmpty().also { decrypted[key] = it }
-
-    fun getInt(context: Context, key: String, default: Int): Int =
-        (decrypted[key] as? Int)
-            ?: prefs(context).getInt(key, default).also { decrypted[key] = it }
-
-    fun getFloat(context: Context, key: String, default: Float): Float =
-        (decrypted[key] as? Float)
-            ?: prefs(context).getFloat(key, default).also { decrypted[key] = it }
 
     /** Writes through to disk and updates the in-memory copy in one step. */
     fun put(context: Context, key: String, value: String) {
@@ -58,25 +66,77 @@ private object SecureSettings {
         decrypted[key] = value
     }
 
-    fun put(context: Context, key: String, value: Int) {
-        prefs(context).edit().putInt(key, value).apply()
-        decrypted[key] = value
+    /** The stored value, or null when the key was never written. Used by [SettingsStore]'s migration. */
+    fun getStringIfSet(context: Context, key: String): String? {
+        (decrypted[key] as? String)?.let { return it }
+        return prefs(context).getString(key, null)?.also { decrypted[key] = it }
     }
 
-    fun put(context: Context, key: String, value: Float) {
-        prefs(context).edit().putFloat(key, value).apply()
-        decrypted[key] = value
+    fun getIntIfSet(context: Context, key: String): Int? {
+        (decrypted[key] as? Int)?.let { return it }
+        val raw = prefs(context)
+        if (!raw.contains(key)) return null
+        return raw.getInt(key, 0).also { decrypted[key] = it }
+    }
+
+    fun getFloatIfSet(context: Context, key: String): Float? {
+        (decrypted[key] as? Float)?.let { return it }
+        val raw = prefs(context)
+        if (!raw.contains(key)) return null
+        return raw.getFloat(key, 0f).also { decrypted[key] = it }
     }
 }
 
 class SettingsStore(private val context: Context) {
 
-    /** True after the user has completed or explicitly skipped first-launch setup. */
-    fun isOnboardingComplete(): Boolean =
-        SecureSettings.getInt(context, "onboarding_complete", 0) != 0
+    /**
+     * Language, cache limits, sounds and the onboarding flag carry no secret and are
+     * read on the main thread (Activity creation, composition, the share sheet), so
+     * they live in a plain prefs file that costs nothing to open.
+     */
+    private val plain: SharedPreferences =
+        context.applicationContext.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
 
-    fun setOnboardingComplete() =
-        SecureSettings.put(context, "onboarding_complete", 1)
+    // ------------------------------------------------------------ plain prefs
+    //
+    // Values written by earlier versions still sit in the encrypted store; the first
+    // read migrates them across one time. The stale encrypted copy is left in place:
+    // from then on the plain key is always present and shadows it, and deleting from
+    // the encrypted store would force a Keystore round trip on exactly the calls
+    // this split exists to avoid.
+
+    private fun migratedInt(key: String, default: Int): Int {
+        if (plain.contains(key)) return plain.getInt(key, default)
+        val legacy = SecureSettings.getIntIfSet(context, key) ?: return default
+        plain.edit().putInt(key, legacy).apply()
+        return legacy
+    }
+
+    private fun migratedFloat(key: String, default: Float): Float {
+        if (plain.contains(key)) return plain.getFloat(key, default)
+        val legacy = SecureSettings.getFloatIfSet(context, key) ?: return default
+        plain.edit().putFloat(key, legacy).apply()
+        return legacy
+    }
+
+    private fun migratedString(key: String, default: String): String {
+        if (plain.contains(key)) return plain.getString(key, default) ?: default
+        val legacy = SecureSettings.getStringIfSet(context, key) ?: return default
+        plain.edit().putString(key, legacy).apply()
+        return legacy
+    }
+
+    /** True after the user has completed or explicitly skipped first-launch setup. */
+    fun isOnboardingComplete(): Boolean = migratedInt("onboarding_complete", 0) != 0
+
+    fun setOnboardingComplete() {
+        plain.edit().putInt("onboarding_complete", 1).apply()
+    }
+
+    // ------------------------------------------------------- encrypted secrets
+    //
+    // The bot token is the bot's password and the group id identifies a private
+    // conversation with it; both stay encrypted.
 
     fun getBotToken(): String = SecureSettings.getString(context, "bot_token", "")
     fun setBotToken(token: String) = SecureSettings.put(context, "bot_token", token.trim())
@@ -84,34 +144,43 @@ class SettingsStore(private val context: Context) {
     fun getGroupId(): String = SecureSettings.getString(context, "group_id", "")
     fun setGroupId(groupId: String) = SecureSettings.put(context, "group_id", groupId.trim())
 
-    fun getCacheLimitMb(): Int = SecureSettings.getInt(context, "cache_limit_mb", 500)
-    fun setCacheLimitMb(limit: Int) = SecureSettings.put(context, "cache_limit_mb", limit)
+    // ------------------------------------------------------------------ plain
 
-    fun getCacheExpirationDays(): Int = SecureSettings.getInt(context, "cache_expiration_days", 7)
-    fun setCacheExpirationDays(days: Int) = SecureSettings.put(context, "cache_expiration_days", days)
+    fun getCacheLimitMb(): Int = migratedInt("cache_limit_mb", 500)
+    fun setCacheLimitMb(limit: Int) = plain.edit().putInt("cache_limit_mb", limit).apply()
 
-    fun getErrorSound(): String =
-        SecureSettings.getString(context, "error_sound", AlertSound.KEY_WARNING)
+    fun getCacheExpirationDays(): Int = migratedInt("cache_expiration_days", 7)
+    fun setCacheExpirationDays(days: Int) = plain.edit().putInt("cache_expiration_days", days).apply()
 
-    fun setErrorSound(sound: String) = SecureSettings.put(context, "error_sound", sound)
+    fun getErrorSound(): String = migratedString("error_sound", AlertSound.KEY_WARNING)
+    fun setErrorSound(sound: String) = plain.edit().putString("error_sound", sound).apply()
 
-    fun getErrorSoundVolume(): Float = SecureSettings.getFloat(context, "error_sound_volume", 1.0f)
-    fun setErrorSoundVolume(volume: Float) = SecureSettings.put(context, "error_sound_volume", volume)
+    fun getErrorSoundVolume(): Float = migratedFloat("error_sound_volume", 1.0f)
+    fun setErrorSoundVolume(volume: Float) = plain.edit().putFloat("error_sound_volume", volume).apply()
 
     /**
      * Success is silent by default: previously the app only ever made noise on
      * failure, and turning that on should be an explicit choice rather than a
      * behaviour change on upgrade.
      */
-    fun getSuccessSound(): String = SecureSettings.getString(context, "success_sound", AlertSound.KEY_NONE)
-    fun setSuccessSound(sound: String) = SecureSettings.put(context, "success_sound", sound)
+    fun getSuccessSound(): String = migratedString("success_sound", AlertSound.KEY_NONE)
+    fun setSuccessSound(sound: String) = plain.edit().putString("success_sound", sound).apply()
 
-    fun getSuccessSoundVolume(): Float = SecureSettings.getFloat(context, "success_sound_volume", 1.0f)
-    fun setSuccessSoundVolume(volume: Float) = SecureSettings.put(context, "success_sound_volume", volume)
+    fun getSuccessSoundVolume(): Float = migratedFloat("success_sound_volume", 1.0f)
+    fun setSuccessSoundVolume(volume: Float) = plain.edit().putFloat("success_sound_volume", volume).apply()
 
-    fun getLanguage(): String = SecureSettings.getString(context, "app_language", "en")
-    fun setLanguage(lang: String) = SecureSettings.put(context, "app_language", lang)
+    fun getLanguage(): String = migratedString("app_language", "en")
+    fun setLanguage(lang: String) = plain.edit().putString("app_language", lang).apply()
 
     /** Every stored sound value, used to garbage-collect unreferenced imports. */
     fun storedSoundValues(): List<String> = listOf(getErrorSound(), getSuccessSound())
+}
+
+/**
+ * Opens the encrypted settings store ahead of any caller who needs it. Called from a
+ * background thread in [com.example.MediaSaverApp] so the Keystore round trip never
+ * runs on the main thread.
+ */
+fun warmUpSecureSettings(context: Context) {
+    SecureSettings.warmUp(context)
 }

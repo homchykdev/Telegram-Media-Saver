@@ -53,15 +53,23 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SoundPickerSection(
     title: String,
+    langCode: String,
     selected: AlertSound,
     volume: Float,
     testTagPrefix: String,
     onSelect: (AlertSound) -> Unit,
     onVolumeChange: (Float) -> Unit
 ) {
+    // Resource-based strings (`stringResource`, `builtInLabel`) resolve against the
+    // current Resources locale, which the parent applies before this recomposes —
+    // but only if this composable actually re-executes, so `langCode` is a required
+    // input that changes whenever the picked language changes.
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var errorMessageText by remember { mutableStateOf<String?>(null) }
+    var errorMessageResId by remember { mutableIntStateOf(0) }
+    val errorMessage: String? = errorMessageText ?: errorMessageResId.takeIf { it != 0 }
+        ?.let { context.resources.getString(it) }
     var missingSound by remember { mutableStateOf(false) }
 
     // Re-check on every recomposition that changes the selection, so a file deleted
@@ -85,14 +93,19 @@ fun SoundPickerSection(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            errorMessage = null
+            errorMessageText = null
+            errorMessageResId = 0
             runCatching { withContext(Dispatchers.IO) { CustomSounds.import(context, uri) } }
                 .onSuccess { fileName ->
                     importEpoch++
                     onSelect(AlertSound.Custom(fileName))
                     AlertSoundPlayer.play(context, AlertSound.Custom(fileName), volume)
                 }
-                .onFailure { errorMessage = it.message ?: context.getString(com.example.R.string.sound_import_failed) }
+                .onFailure {
+                    val message = it.message
+                    if (message != null) errorMessageText = message
+                    else errorMessageResId = com.example.R.string.sound_import_failed
+                }
         }
     }
 
@@ -168,7 +181,7 @@ fun SoundPickerSection(
                 onListen = { AlertSoundPlayer.play(context, AlertSound.Custom(fileName), volume) },
                 onDelete = {
                     if (isSelected) {
-                        errorMessage = context.getString(com.example.R.string.sound_in_use)
+                        errorMessageResId = com.example.R.string.sound_in_use
                     } else {
                         CustomSounds.delete(context, fileName)
                         importEpoch++

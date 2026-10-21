@@ -281,6 +281,26 @@ class DownloadUseCaseCacheTest {
         assertFalse(useCase.isInFlight(b))
     }
 
+    @Test
+    fun `releasing one download keeps another download's claim`() = runBlocking {
+        server.enqueue(immediateBody())
+        server.enqueue(immediateBody())
+        val a = useCase.downloadFile(server.url("/a.mp4").toString(), "mp4")
+        val b = useCase.downloadFile(server.url("/b.mp4").toString(), "mp4")
+
+        // Two workers run concurrently; the upload of the first one finishes while
+        // the second is still transferring. Releasing the first download's claim
+        // must not un-protect the second: the sweeper would otherwise unlink a
+        // file being written at that very moment.
+        useCase.releaseDownloaded(a)
+
+        assertFalse(useCase.isInFlight(a))
+        assertTrue(
+            "another transfer's claim was dropped along with this one",
+            useCase.isInFlight(b)
+        )
+    }
+
     // ------------------------------------------------------- transfer errors
 
     @Test
