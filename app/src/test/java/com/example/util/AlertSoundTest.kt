@@ -16,7 +16,7 @@ class AlertSoundTest {
 
     @Test
     fun `built-ins round trip`() {
-        listOf(AlertSound.KEY_WARNING, AlertSound.KEY_ALARM, AlertSound.KEY_SUCCESS).forEach { key ->
+        AlertSound.BUILT_IN_KEYS.forEach { key ->
             val encoded = AlertSound.encode(BuiltIn(key))
             assertEquals(BuiltIn(key), AlertSound.parse(encoded))
         }
@@ -37,12 +37,16 @@ class AlertSoundTest {
 
     /**
      * Installs that predate the `builtin:` prefix stored a bare key. Reading one back
-     * as None would silently reset the user's sound on upgrade.
+     * must not reset the user's sound on upgrade; the removed error sounds resolve to
+     * the bundled default error sound instead of to silence.
      */
     @Test
     fun `legacy bare key is read as a built-in`() {
-        assertEquals(BuiltIn(AlertSound.KEY_WARNING), AlertSound.parse(AlertSound.KEY_WARNING))
-        assertEquals(BuiltIn(AlertSound.KEY_ALARM), AlertSound.parse(AlertSound.KEY_ALARM))
+        assertEquals(BuiltIn(AlertSound.KEY_SUCCESS), AlertSound.parse(AlertSound.KEY_SUCCESS))
+        assertEquals(BuiltIn(AlertSound.KEY_ERROR_DEFAULT), AlertSound.parse("warning"))
+        assertEquals(BuiltIn(AlertSound.KEY_ERROR_DEFAULT), AlertSound.parse("alarm"))
+        assertEquals(BuiltIn(AlertSound.KEY_ERROR_DEFAULT), AlertSound.parse("builtin:warning"))
+        assertEquals(BuiltIn(AlertSound.KEY_ERROR_DEFAULT), AlertSound.parse("builtin:alarm"))
     }
 
     @Test
@@ -70,7 +74,7 @@ class AlertSoundTest {
     @Test
     fun `playability follows the sound kind`() {
         assertFalse(AlertSound.None.isPlayable)
-        assertTrue(BuiltIn(AlertSound.KEY_ALARM).isPlayable)
+        assertTrue(BuiltIn(AlertSound.KEY_ERROR_DEFAULT).isPlayable)
         assertTrue(Custom("x.mp3").isPlayable)
     }
 }

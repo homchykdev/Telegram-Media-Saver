@@ -152,7 +152,7 @@ class SettingsStore(private val context: Context) {
     fun getCacheExpirationDays(): Int = migratedInt("cache_expiration_days", 7)
     fun setCacheExpirationDays(days: Int) = plain.edit().putInt("cache_expiration_days", days).apply()
 
-    fun getErrorSound(): String = migratedString("error_sound", AlertSound.KEY_WARNING)
+    fun getErrorSound(): String = migratedString("error_sound", AlertSound.KEY_ERROR_DEFAULT)
     fun setErrorSound(sound: String) = plain.edit().putString("error_sound", sound).apply()
 
     fun getErrorSoundVolume(): Float = migratedFloat("error_sound_volume", 1.0f)

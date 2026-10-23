@@ -16,9 +16,8 @@
     <string name="notif_channel_error_desc">Уведомления об ошибках скачивания и отправки</string>
 
     <!-- Alert sounds -->
-    <string name="sound_builtin_warning">Космический бластер (предупреждение)</string>
-    <string name="sound_builtin_alarm">Сигнал тревоги</string>
-    <string name="sound_builtin_success">Приятный сигнал</string>
+    <string name="sound_builtin_error_default">По умолчанию (ошибка)</string>
+    <string name="sound_builtin_success">По умолчанию (успех)</string>
     <string name="sound_none">Без звука</string>
     <string name="sound_pick_own">Выбрать свой звук…</string>
     <string name="sound_own_section">Мои звуки</string>

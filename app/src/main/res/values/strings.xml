@@ -16,9 +16,8 @@
     <string name="notif_channel_error_desc">Notifications about download and send errors</string>
 
     <!-- Alert sounds -->
-    <string name="sound_builtin_warning">Space Blaster (warning)</string>
-    <string name="sound_builtin_alarm">Alarm signal</string>
-    <string name="sound_builtin_success">Pleasant chime</string>
+    <string name="sound_builtin_error_default">Default (error)</string>
+    <string name="sound_builtin_success">Default (success)</string>
     <string name="sound_none">No sound</string>
     <string name="sound_pick_own">Choose your sound…</string>
     <string name="sound_own_section">My sounds</string>

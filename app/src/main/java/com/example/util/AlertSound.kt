@@ -32,21 +32,28 @@ sealed class AlertSound {
 
     companion object {
         const val KEY_NONE = "none"
-        const val KEY_WARNING = "warning"
-        const val KEY_ALARM = "alarm"
+        const val KEY_ERROR_DEFAULT = "error_default"
         const val KEY_SUCCESS = "success"
 
         private const val PREFIX_BUILTIN = "builtin:"
         private const val PREFIX_CUSTOM = "custom:"
 
-        val BUILT_IN_KEYS = listOf(KEY_WARNING, KEY_ALARM, KEY_SUCCESS)
+        val BUILT_IN_KEYS = listOf(KEY_ERROR_DEFAULT, KEY_SUCCESS)
+
+        /**
+         * Bundled error sounds replaced by [KEY_ERROR_DEFAULT]; their files were
+         * removed, so a stored reference to them degrades to the new default rather
+         * than to silence.
+         */
+        private val LEGACY_ERROR_KEYS = setOf("warning", "alarm")
 
         /**
          * Parses a stored preference.
          *
          * A bare key such as `"warning"` predates the `builtin:` prefix and is still
          * present in existing installs, so it is accepted as a built-in rather than
-         * silently resetting the user's choice.
+         * silently resetting the user's choice. Legacy error keys resolve to the
+         * bundled default error sound, whose file replaced theirs.
          */
         fun parse(raw: String?): AlertSound {
             if (raw.isNullOrBlank() || raw == KEY_NONE) return None
@@ -55,6 +62,7 @@ sealed class AlertSound {
                 return if (name.isBlank()) None else Custom(name)
             }
             val key = raw.removePrefix(PREFIX_BUILTIN)
+            if (key in LEGACY_ERROR_KEYS) return BuiltIn(KEY_ERROR_DEFAULT)
             return if (key in BUILT_IN_KEYS) BuiltIn(key) else None
         }
 
@@ -68,8 +76,7 @@ sealed class AlertSound {
 
         /** Human-readable name for a bundled sound. */
         fun builtInLabel(context: Context, key: String): String = when (key) {
-            KEY_WARNING -> context.getString(R.string.sound_builtin_warning)
-            KEY_ALARM -> context.getString(R.string.sound_builtin_alarm)
+            KEY_ERROR_DEFAULT -> context.getString(R.string.sound_builtin_error_default)
             KEY_SUCCESS -> context.getString(R.string.sound_builtin_success)
             else -> key
         }
@@ -77,8 +84,7 @@ sealed class AlertSound {
         /** The bundled file for a key, or null when the key is unknown. */
         @androidx.annotation.RawRes
         fun builtInRes(key: String): Int? = when (key) {
-            KEY_WARNING -> R.raw.error_warning
-            KEY_ALARM -> R.raw.error_alarm
+            KEY_ERROR_DEFAULT -> R.raw.error_default
             KEY_SUCCESS -> R.raw.success_chime
             else -> null
         }
